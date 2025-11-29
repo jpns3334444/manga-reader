@@ -1,5 +1,6 @@
 import json
 import os
+import boto3
 import psycopg2
 import psycopg2.extras
 from urllib.parse import unquote
@@ -9,16 +10,11 @@ from decimal import Decimal
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+s3_client = boto3.client('s3')
+
 DATABASE_URL = os.environ['DATABASE_URL']
 S3_BUCKET = os.environ['S3_BUCKET']
 ENVIRONMENT = os.environ['ENVIRONMENT']
-
-try:
-    import boto3
-    s3_client = boto3.client('s3')
-except Exception as e:
-    logger.warning(f"Failed to initialize S3 client: {str(e)}")
-    s3_client = None
 
 def get_database_connection():
     """Get database connection using DATABASE_URL environment variable."""
@@ -49,10 +45,6 @@ def create_response(status_code, body, headers=None):
 
 def generate_presigned_url(s3_key, expiration=3600):
     """Generate presigned URL for S3 object."""
-    if not s3_client:
-        logger.error("S3 client not initialized")
-        return None
-
     try:
         url = s3_client.generate_presigned_url(
             'get_object',
