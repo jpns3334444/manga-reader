@@ -92,46 +92,82 @@ deploy_stack() {
 
     local params="ParameterKey=EnvironmentName,ParameterValue=$ENVIRONMENT_NAME ParameterKey=DatabaseURL,ParameterValue=$DATABASE_URL"
 
-    if aws cloudformation describe-stacks --stack-name "$stack_name" &> /dev/null; then
+    # Check if stack exists and is in a failed state
+    local existing_status=$(aws cloudformation describe-stacks --stack-name "$stack_name" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo "DOES_NOT_EXIST")
+
+    if [[ "$existing_status" == "ROLLBACK_COMPLETE" ]] || [[ "$existing_status" == "CREATE_FAILED" ]]; then
+        print_warning "Stack is in $existing_status state. Deleting before recreating..."
+        aws cloudformation delete-stack --stack-name "$stack_name"
+        print_step "Waiting for stack deletion..."
+        aws cloudformation wait stack-delete-complete --stack-name "$stack_name"
+        print_success "Stack deleted"
+        existing_status="DOES_NOT_EXIST"
+    fi
+
+    if [[ "$existing_status" != "DOES_NOT_EXIST" ]]; then
         print_step "Updating existing stack: $stack_name"
-        aws cloudformation update-stack \
+        if ! aws cloudformation update-stack \
             --stack-name "$stack_name" \
             --template-body "file://$template_file" \
             --parameters $params \
-            ${capabilities:+--capabilities "$capabilities"} || {
-                local status=$?
-                if [ $status -eq 254 ] || [ $status -eq 255 ]; then
-                    # Check if the error is "No updates to be performed"
-                    local error_msg=$(aws cloudformation describe-stacks --stack-name "$stack_name" --query 'Stacks[0].StackStatus' --output text 2>&1)
-                    if [[ "$error_msg" == *"No updates"* ]] || aws cloudformation describe-stack-events --stack-name "$stack_name" --max-items 1 --query 'StackEvents[0].ResourceStatusReason' --output text 2>/dev/null | grep -q "No updates"; then
-                        print_warning "No updates to be performed on stack: $stack_name"
-                        return 0
-                    fi
-                fi
-                return $status
-            }
+            ${capabilities:+--capabilities "$capabilities"} 2>&1 | tee /tmp/cfn-error.txt; then
+
+            if grep -q "No updates are to be performed" /tmp/cfn-error.txt; then
+                print_warning "No updates to be performed on stack: $stack_name"
+                return 0
+            else
+                print_error "Failed to update stack"
+                cat /tmp/cfn-error.txt
+                return 1
+            fi
+        fi
+        local operation="update"
     else
         print_step "Creating new stack: $stack_name"
-        aws cloudformation create-stack \
+        if ! aws cloudformation create-stack \
             --stack-name "$stack_name" \
             --template-body "file://$template_file" \
             --parameters $params \
-            ${capabilities:+--capabilities "$capabilities"}
+            ${capabilities:+--capabilities "$capabilities"} 2>&1 | tee /tmp/cfn-error.txt; then
+
+            print_error "Failed to create stack"
+            cat /tmp/cfn-error.txt
+            return 1
+        fi
+        local operation="create"
     fi
 
     print_step "Waiting for stack operation to complete..."
-    aws cloudformation wait stack-create-complete --stack-name "$stack_name" 2>/dev/null || \
-    aws cloudformation wait stack-update-complete --stack-name "$stack_name" 2>/dev/null || \
-    true
 
-    # Check stack status
-    local status=$(aws cloudformation describe-stacks --stack-name "$stack_name" --query 'Stacks[0].StackStatus' --output text)
-    if [[ "$status" == *"COMPLETE" ]]; then
-        print_success "Stack deployment completed: $stack_name ($status)"
-    else
-        print_error "Stack deployment failed: $stack_name ($status)"
-        exit 1
-    fi
+    # Wait with timeout and show progress
+    local max_wait=600  # 10 minutes
+    local elapsed=0
+    local interval=10
+
+    while [ $elapsed -lt $max_wait ]; do
+        local status=$(aws cloudformation describe-stacks --stack-name "$stack_name" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo "UNKNOWN")
+
+        if [[ "$status" == *"COMPLETE"* ]]; then
+            print_success "Stack deployment completed: $stack_name ($status)"
+            return 0
+        elif [[ "$status" == *"FAILED"* ]] || [[ "$status" == *"ROLLBACK"* ]]; then
+            print_error "Stack deployment failed: $stack_name ($status)"
+            print_error "Recent stack events:"
+            aws cloudformation describe-stack-events \
+                --stack-name "$stack_name" \
+                --max-items 10 \
+                --query 'StackEvents[?ResourceStatus==`CREATE_FAILED` || ResourceStatus==`UPDATE_FAILED` || ResourceStatus==`DELETE_FAILED`].[Timestamp,ResourceType,LogicalResourceId,ResourceStatusReason]' \
+                --output table
+            return 1
+        fi
+
+        sleep $interval
+        elapsed=$((elapsed + interval))
+        echo -n "."
+    done
+
+    print_error "Stack operation timed out after ${max_wait} seconds"
+    return 1
 }
 
 package_and_deploy_lambda() {
