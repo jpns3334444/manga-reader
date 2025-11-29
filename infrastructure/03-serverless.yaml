@@ -1,0 +1,291 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Serverless backend for manga reader - Lambda, API Gateway, S3'
+
+Parameters:
+  EnvironmentName:
+    Description: Environment name that will be prefixed to resource names
+    Type: String
+    Default: manga-reader
+
+  LambdaRuntime:
+    Description: Lambda runtime
+    Type: String
+    Default: python3.11
+
+Resources:
+  # S3 Bucket for manga images
+  MangaImagesBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${EnvironmentName}-manga-images-${AWS::AccountId}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ['*']
+            AllowedMethods: [GET]
+            AllowedOrigins: ['*']
+            MaxAge: 3600
+      NotificationConfiguration:
+        CloudWatchConfigurations:
+          - Event: s3:ObjectCreated:*
+            CloudWatchConfiguration:
+              LogGroupName: !Sub '/aws/s3/${EnvironmentName}-manga-images'
+
+  # Lambda Layer for PostgreSQL dependencies
+  PostgreSQLLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: !Sub '${EnvironmentName}-postgresql-layer'
+      Description: 'PostgreSQL dependencies for Python Lambda functions'
+      Content:
+        S3Bucket: !Sub '${EnvironmentName}-lambda-layers-${AWS::AccountId}'
+        S3Key: 'postgresql-layer.zip'
+      CompatibleRuntimes:
+        - !Ref LambdaRuntime
+      CompatibleArchitectures:
+        - x86_64
+
+  # IAM Role for Lambda functions
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${EnvironmentName}-lambda-execution-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      Policies:
+        - PolicyName: MangaReaderLambdaPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource:
+                  - Fn::ImportValue: !Sub '${EnvironmentName}-Database-Secret-Arn'
+                  - Fn::ImportValue: !Sub '${EnvironmentName}-Database-Connection-Secret-Arn'
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectAcl
+                  - s3:PutObject
+                  - s3:PutObjectAcl
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub '${MangaImagesBucket}/*'
+                  - !Ref MangaImagesBucket
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+
+  # Lambda function for manga API
+  MangaApiFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${EnvironmentName}-manga-api'
+      Runtime: !Ref LambdaRuntime
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          def lambda_handler(event, context):
+              return {
+                  'statusCode': 200,
+                  'headers': {
+                      'Content-Type': 'application/json',
+                      'Access-Control-Allow-Origin': '*',
+                      'Access-Control-Allow-Headers': 'Content-Type',
+                      'Access-Control-Allow-Methods': 'GET,POST,OPTIONS'
+                  },
+                  'body': json.dumps({'message': 'Manga API placeholder - update with actual code'})
+              }
+      Environment:
+        Variables:
+          DB_SECRET_ARN:
+            Fn::ImportValue: !Sub '${EnvironmentName}-Database-Connection-Secret-Arn'
+          S3_BUCKET: !Ref MangaImagesBucket
+          ENVIRONMENT: !Ref EnvironmentName
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::ImportValue: !Sub '${EnvironmentName}-Lambda-Security-Group'
+        SubnetIds:
+          - Fn::ImportValue: !Sub '${EnvironmentName}-Private-Subnet-AZ1'
+          - Fn::ImportValue: !Sub '${EnvironmentName}-Private-Subnet-AZ2'
+      Layers:
+        - !Ref PostgreSQLLayer
+      Timeout: 30
+      MemorySize: 256
+
+  # API Gateway HTTP API
+  MangaApiGateway:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub '${EnvironmentName}-manga-api'
+      Description: 'HTTP API for manga reader backend'
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowOrigins:
+          - '*'
+        AllowMethods:
+          - GET
+          - POST
+          - OPTIONS
+        AllowHeaders:
+          - Content-Type
+          - Authorization
+        MaxAge: 300
+
+  # API Gateway Integration
+  LambdaIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref MangaApiGateway
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${MangaApiFunction.Arn}/invocations'
+      PayloadFormatVersion: '2.0'
+
+  # API Gateway Routes
+  GetMangaRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref MangaApiGateway
+      RouteKey: 'GET /manga'
+      Target: !Sub 'integrations/${LambdaIntegration}'
+
+  GetMangaByIdRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref MangaApiGateway
+      RouteKey: 'GET /manga/{id}'
+      Target: !Sub 'integrations/${LambdaIntegration}'
+
+  GetMangaChaptersRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref MangaApiGateway
+      RouteKey: 'GET /manga/{id}/chapters'
+      Target: !Sub 'integrations/${LambdaIntegration}'
+
+  GetChapterRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref MangaApiGateway
+      RouteKey: 'GET /chapters/{id}'
+      Target: !Sub 'integrations/${LambdaIntegration}'
+
+  PostMangaRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref MangaApiGateway
+      RouteKey: 'POST /manga'
+      Target: !Sub 'integrations/${LambdaIntegration}'
+
+  PostChapterRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref MangaApiGateway
+      RouteKey: 'POST /chapters'
+      Target: !Sub 'integrations/${LambdaIntegration}'
+
+  OptionsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref MangaApiGateway
+      RouteKey: 'OPTIONS /{proxy+}'
+      Target: !Sub 'integrations/${LambdaIntegration}'
+
+  # API Gateway Stage
+  ApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref MangaApiGateway
+      StageName: !Ref EnvironmentName
+      AutoDeploy: true
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 100
+        ThrottlingRateLimit: 50
+
+  # Lambda permission for API Gateway
+  LambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref MangaApiFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub '${MangaApiGateway}/*/*'
+
+  # CloudWatch Log Group for Lambda
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${MangaApiFunction}'
+      RetentionInDays: 14
+
+  # CloudWatch Log Group for API Gateway
+  ApiGatewayLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/apigateway/${EnvironmentName}-manga-api'
+      RetentionInDays: 14
+
+Outputs:
+  ApiEndpoint:
+    Description: API Gateway endpoint URL
+    Value: !Sub 'https://${MangaApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${EnvironmentName}'
+    Export:
+      Name: !Sub '${EnvironmentName}-Api-Endpoint'
+
+  ApiId:
+    Description: API Gateway ID
+    Value: !Ref MangaApiGateway
+    Export:
+      Name: !Sub '${EnvironmentName}-Api-Id'
+
+  LambdaFunctionName:
+    Description: Lambda function name
+    Value: !Ref MangaApiFunction
+    Export:
+      Name: !Sub '${EnvironmentName}-Lambda-Function-Name'
+
+  LambdaFunctionArn:
+    Description: Lambda function ARN
+    Value: !GetAtt MangaApiFunction.Arn
+    Export:
+      Name: !Sub '${EnvironmentName}-Lambda-Function-Arn'
+
+  S3BucketName:
+    Description: S3 bucket name for manga images
+    Value: !Ref MangaImagesBucket
+    Export:
+      Name: !Sub '${EnvironmentName}-S3-Bucket-Name'
+
+  S3BucketArn:
+    Description: S3 bucket ARN
+    Value: !GetAtt MangaImagesBucket.Arn
+    Export:
+      Name: !Sub '${EnvironmentName}-S3-Bucket-Arn'
+
+  PostgreSQLLayerArn:
+    Description: PostgreSQL Lambda Layer ARN
+    Value: !Ref PostgreSQLLayer
+    Export:
+      Name: !Sub '${EnvironmentName}-PostgreSQL-Layer-Arn'
