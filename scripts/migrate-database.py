@@ -1,26 +1,14 @@
 #!/usr/bin/env python3
 
-import json
 import psycopg2
-import boto3
 import argparse
 import sys
 import os
 
-def get_database_connection(secret_arn, region='us-east-1'):
-    """Get database connection using credentials from Secrets Manager."""
+def get_database_connection(database_url):
+    """Get database connection using DATABASE_URL."""
     try:
-        secrets_client = boto3.client('secretsmanager', region_name=region)
-        response = secrets_client.get_secret_value(SecretId=secret_arn)
-        secret = json.loads(response['SecretString'])
-
-        connection = psycopg2.connect(
-            host=secret['host'],
-            port=secret['port'],
-            database=secret['dbname'],
-            user=secret['username'],
-            password=secret['password']
-        )
+        connection = psycopg2.connect(database_url)
         return connection
     except Exception as e:
         print(f"Database connection failed: {str(e)}")
@@ -63,10 +51,8 @@ def check_database_status(connection):
 
 def main():
     parser = argparse.ArgumentParser(description='Migrate manga reader database schema')
-    parser.add_argument('--secret-arn', required=True,
-                       help='ARN of the Secrets Manager secret containing database credentials')
-    parser.add_argument('--region', default='us-east-1',
-                       help='AWS region (default: us-east-1)')
+    parser.add_argument('--database-url', required=True,
+                       help='PostgreSQL connection string (postgresql://user:password@host/dbname?sslmode=require)')
     parser.add_argument('--schema-file', default='database/schema.sql',
                        help='Path to schema SQL file (default: database/schema.sql)')
     parser.add_argument('--force', action='store_true',
@@ -81,8 +67,9 @@ def main():
 
     try:
         # Connect to database
-        print(f"Connecting to database using secret: {args.secret_arn}")
-        connection = get_database_connection(args.secret_arn, args.region)
+        print(f"Connecting to database...")
+        connection = get_database_connection(args.database_url)
+        print("Connected successfully!")
 
         # Check current database status
         existing_tables = check_database_status(connection)

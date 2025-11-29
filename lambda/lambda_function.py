@@ -1,39 +1,29 @@
 import json
 import os
-import boto3
 import psycopg2
 import psycopg2.extras
-from botocore.exceptions import ClientError
 from urllib.parse import unquote
 import logging
 from decimal import Decimal
 
-# Configure logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-# Initialize AWS clients
-secrets_client = boto3.client('secretsmanager')
-s3_client = boto3.client('s3')
-
-# Environment variables
-DB_SECRET_ARN = os.environ['DB_SECRET_ARN']
+DATABASE_URL = os.environ['DATABASE_URL']
 S3_BUCKET = os.environ['S3_BUCKET']
 ENVIRONMENT = os.environ['ENVIRONMENT']
 
-def get_database_connection():
-    """Get database connection using credentials from Secrets Manager."""
-    try:
-        response = secrets_client.get_secret_value(SecretId=DB_SECRET_ARN)
-        secret = json.loads(response['SecretString'])
+try:
+    import boto3
+    s3_client = boto3.client('s3')
+except Exception as e:
+    logger.warning(f"Failed to initialize S3 client: {str(e)}")
+    s3_client = None
 
-        connection = psycopg2.connect(
-            host=secret['host'],
-            port=secret['port'],
-            database=secret['dbname'],
-            user=secret['username'],
-            password=secret['password']
-        )
+def get_database_connection():
+    """Get database connection using DATABASE_URL environment variable."""
+    try:
+        connection = psycopg2.connect(DATABASE_URL)
         return connection
     except Exception as e:
         logger.error(f"Database connection failed: {str(e)}")
@@ -59,6 +49,10 @@ def create_response(status_code, body, headers=None):
 
 def generate_presigned_url(s3_key, expiration=3600):
     """Generate presigned URL for S3 object."""
+    if not s3_client:
+        logger.error("S3 client not initialized")
+        return None
+
     try:
         url = s3_client.generate_presigned_url(
             'get_object',

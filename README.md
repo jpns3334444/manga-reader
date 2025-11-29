@@ -1,13 +1,13 @@
 # Manga Reader Serverless Backend
 
-A complete serverless backend for a manga reader application built on AWS using CloudFormation, Lambda, API Gateway, RDS PostgreSQL, and S3.
+A simplified serverless backend for a manga reader application built on AWS using CloudFormation, Lambda, API Gateway, Neon PostgreSQL (serverless), and S3.
 
 ## Architecture
 
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   API Gateway   │───▶│     Lambda      │───▶│   RDS (PostgreSQL)
-│                 │    │                 │    │   Private Subnet
+│   API Gateway   │───▶│     Lambda      │───▶│  Neon PostgreSQL│
+│   (HTTP API)    │    │  (No VPC!)      │    │   (Serverless)  │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
                                │
                                ▼
@@ -16,6 +16,15 @@ A complete serverless backend for a manga reader application built on AWS using 
                       │  (Manga Images) │
                       └─────────────────┘
 ```
+
+### Key Benefits
+
+- **No VPC complexity** - Lambda runs without VPC, Neon is accessible over the internet with SSL
+- **No NAT gateways** - Saves ~$32/month per AZ
+- **Serverless database** - Neon scales to zero when not in use
+- **Simpler deployment** - Single CloudFormation stack instead of three
+- **Lower costs** - Pay only for what you use on both compute and database
+- **Faster cold starts** - Lambda starts faster without VPC
 
 ## Features
 
@@ -28,13 +37,11 @@ A complete serverless backend for a manga reader application built on AWS using 
 - **POST /chapters** - Create new chapter with pages (admin)
 
 ### Infrastructure
-- **VPC** with public/private subnets across 2 AZs
-- **RDS PostgreSQL** database in private subnets
-- **Lambda functions** with VPC connectivity
-- **API Gateway HTTP API** for REST endpoints
-- **S3 bucket** for manga page images with presigned URLs
-- **Secrets Manager** for database credentials
-- **CloudWatch** logging and monitoring
+- **Lambda functions** - No VPC, direct internet access
+- **API Gateway HTTP API** - REST endpoints with CORS
+- **S3 bucket** - Manga page images with presigned URLs
+- **Neon PostgreSQL** - Serverless PostgreSQL database
+- **CloudWatch** - Logging and monitoring
 
 ## Quick Start
 
@@ -42,6 +49,20 @@ A complete serverless backend for a manga reader application built on AWS using 
 - AWS CLI configured with appropriate permissions
 - Python 3.11+
 - jq (for JSON parsing in scripts)
+- A Neon account (free tier available at https://neon.tech)
+
+### Setup Neon Database
+
+1. **Create a Neon account** at https://neon.tech
+2. **Create a new project** in the Neon console
+3. **Get your connection string**:
+   - Go to your project dashboard
+   - Click "Connection Details"
+   - Copy the connection string (it looks like):
+     ```
+     postgresql://user:password@ep-xyz-123.us-east-2.aws.neon.tech/dbname?sslmode=require
+     ```
+   - Keep this handy for deployment
 
 ### Deployment
 
@@ -53,14 +74,18 @@ A complete serverless backend for a manga reader application built on AWS using 
 
 2. **Deploy infrastructure**:
    ```bash
+   ./deploy.sh --database-url "postgresql://user:password@host/dbname?sslmode=require"
+   ```
+
+   Or run interactively (it will prompt for the DATABASE_URL):
+   ```bash
    ./deploy.sh
    ```
 
    This will:
-   - Create all CloudFormation stacks
-   - Build and deploy the Lambda layer
-   - Deploy the Lambda function code
-   - Run database migrations
+   - Deploy the CloudFormation stack (Lambda, API Gateway, S3)
+   - Deploy the Lambda function code with dependencies
+   - Optionally run database migrations
    - Test the deployment
 
 3. **Test the API**:
@@ -72,35 +97,33 @@ A complete serverless backend for a manga reader application built on AWS using 
 
 If you prefer to deploy manually:
 
-1. **Build Lambda layer**:
+1. **Run database migration** (one time):
    ```bash
-   ./scripts/build-layer.sh
-   # Upload postgresql-layer.zip to S3
+   python3 scripts/migrate-database.py \
+     --database-url "postgresql://user:password@host/dbname?sslmode=require"
    ```
 
-2. **Deploy CloudFormation stacks**:
+2. **Deploy CloudFormation stack**:
    ```bash
-   aws cloudformation deploy \
-     --template-file infrastructure/01-network.yaml \
-     --stack-name manga-reader-network \
-     --parameter-overrides EnvironmentName=manga-reader
-
-   aws cloudformation deploy \
-     --template-file infrastructure/02-database.yaml \
-     --stack-name manga-reader-database \
-     --parameter-overrides EnvironmentName=manga-reader
-
    aws cloudformation deploy \
      --template-file infrastructure/03-serverless.yaml \
      --stack-name manga-reader-serverless \
-     --parameter-overrides EnvironmentName=manga-reader \
+     --parameter-overrides \
+       EnvironmentName=manga-reader \
+       DatabaseURL="postgresql://user:password@host/dbname?sslmode=require" \
      --capabilities CAPABILITY_NAMED_IAM
    ```
 
-3. **Run database migration**:
+3. **Deploy Lambda code**:
    ```bash
-   python3 scripts/migrate-database.py \
-     --secret-arn arn:aws:secretsmanager:region:account:secret:manga-reader/database/connection-xxxxx
+   cd lambda
+   pip install -r requirements.txt -t . --platform manylinux2014_x86_64 --only-binary=:all:
+   zip -r ../lambda-deployment.zip . -x "*.pyc" "*__pycache__*"
+   cd ..
+
+   aws lambda update-function-code \
+     --function-name manga-reader-manga-api \
+     --zip-file fileb://lambda-deployment.zip
    ```
 
 ## Database Schema
@@ -176,81 +199,126 @@ curl https://your-api-endpoint/chapters/uuid-here
 ```
 manga-reader/
 ├── infrastructure/
-│   ├── 01-network.yaml          # VPC, subnets, gateways
-│   ├── 02-database.yaml         # RDS, security groups, secrets
-│   └── 03-serverless.yaml       # Lambda, API Gateway, S3
+│   └── 03-serverless.yaml       # Lambda, API Gateway, S3 (simplified!)
 ├── lambda/
 │   ├── lambda_function.py       # Main Lambda function code
-│   └── requirements.txt         # Python dependencies
+│   └── requirements.txt         # Python dependencies (psycopg2-binary only)
 ├── database/
 │   └── schema.sql              # Database schema with sample data
 ├── scripts/
-│   ├── build-layer.sh          # Build PostgreSQL Lambda layer
 │   └── migrate-database.py     # Database migration script
-├── deploy.sh                   # Main deployment script
+├── deploy.sh                   # Simplified deployment script
 ├── test-api.sh                 # API testing script
 └── README.md
 ```
 
+### What's Gone
+
+Removed complexity compared to traditional VPC-based architecture:
+- ❌ infrastructure/01-network.yaml - No more VPC, subnets, NAT gateways
+- ❌ infrastructure/02-database.yaml - No more RDS, security groups, Secrets Manager
+- ❌ scripts/build-layer.sh - No more Lambda layers needed
+- ❌ VPC configuration in Lambda
+- ❌ Security groups
+- ❌ Secrets Manager
+- ❌ NAT gateways (~$32/month savings per AZ)
+
 ## Configuration
 
 ### Environment Variables (Lambda)
-- `DB_SECRET_ARN` - ARN of database connection secret
+- `DATABASE_URL` - Neon PostgreSQL connection string
 - `S3_BUCKET` - Name of S3 bucket for images
 - `ENVIRONMENT` - Environment name
 
 ### CloudFormation Parameters
 - `EnvironmentName` - Prefix for all resources (default: manga-reader)
-- `VpcCidr` - VPC CIDR block (default: 10.0.0.0/16)
-- `DBInstanceClass` - RDS instance type (default: db.t3.micro)
-- `DBAllocatedStorage` - Database storage size (default: 20GB)
+- `DatabaseURL` - Neon connection string (required, NoEcho for security)
+- `LambdaRuntime` - Python runtime version (default: python3.11)
 
 ## Security Features
 
-- **VPC isolation** - Database in private subnets
-- **Secrets Manager** - Database credentials rotation
+- **SSL/TLS** - All connections to Neon use SSL (required)
 - **S3 bucket encryption** - AES-256 encryption at rest
 - **Presigned URLs** - Time-limited access to images
-- **Security groups** - Restricted network access
-- **IAM roles** - Least privilege access
+- **IAM roles** - Least privilege access for Lambda
+- **NoEcho parameter** - Database URL hidden in CloudFormation
 
 ## Monitoring
 
-- **CloudWatch Logs** - Lambda and API Gateway logs
-- **RDS Performance Insights** - Database monitoring
+- **CloudWatch Logs** - Lambda and API Gateway logs (14-day retention)
+- **Neon Dashboard** - Database metrics and query insights
 - **CloudWatch Metrics** - API and Lambda metrics
 
 ## Cost Optimization
 
-- **RDS**: Uses db.t3.micro for development (upgrade for production)
-- **Lambda**: 256MB memory, 30-second timeout
-- **S3**: Standard storage class (consider Intelligent Tiering)
-- **CloudWatch**: 14-day log retention
+### Monthly Cost Estimate (Low Traffic)
+- **Lambda**: ~$0-5 (free tier covers 1M requests)
+- **API Gateway**: ~$0-3 (free tier covers 1M requests for 12 months)
+- **S3**: ~$0-2 (depends on storage and requests)
+- **Neon**: $0 (free tier: 0.5 GB storage, compute scales to zero)
+- **NAT Gateway**: $0 (eliminated!)
+
+**Total**: ~$0-10/month vs ~$65+/month with VPC/NAT/RDS
+
+### Cost Savings
+- No NAT gateways: **-$32/month per AZ**
+- No RDS instance: **-$15+/month**
+- Neon scales to zero: **Pay only when active**
+- Simpler architecture: **Faster development = lower maintenance costs**
+
+## Neon Database Benefits
+
+- **Serverless** - Automatically scales to zero when inactive
+- **Instant provisioning** - Database ready in seconds
+- **Branching** - Create database branches for testing
+- **Point-in-time recovery** - Built-in backups
+- **Connection pooling** - Built-in pooler for serverless functions
+- **PostgreSQL compatible** - Use standard psycopg2 driver
+- **Free tier** - 0.5 GB storage, 1 compute hour/month included
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **Lambda timeout**: Increase timeout in CloudFormation template
-2. **Database connection**: Check security groups and VPC configuration
+1. **Lambda timeout**: Database connection issues
+   - Verify DATABASE_URL is correct
+   - Check Neon dashboard for connection limits
+   - Ensure `?sslmode=require` is in connection string
+
+2. **Database connection fails**: SSL/TLS issues
+   - Neon requires SSL: ensure connection string has `?sslmode=require`
+   - Check Neon project status in dashboard
+
 3. **S3 access**: Verify IAM permissions for Lambda role
-4. **Migration fails**: Check database credentials and network connectivity
+
+4. **Migration fails**: Check database credentials and connectivity
+   ```bash
+   python3 scripts/migrate-database.py \
+     --database-url "your-url" \
+     --force
+   ```
 
 ### Useful Commands
 
 ```bash
 # Check CloudFormation stack status
-aws cloudformation describe-stacks --stack-name manga-reader-network
+aws cloudformation describe-stacks --stack-name manga-reader-serverless
 
 # View Lambda logs
 aws logs tail /aws/lambda/manga-reader-manga-api --follow
 
 # Test database connection
-python3 scripts/migrate-database.py --secret-arn <arn> --force
+python3 scripts/migrate-database.py \
+  --database-url "postgresql://..." \
+  --force
 
 # Update Lambda code only
-cd lambda && zip -r ../update.zip . && \
-aws lambda update-function-code --function-name manga-reader-manga-api --zip-file fileb://../update.zip
+cd lambda && \
+pip install -r requirements.txt -t . --platform manylinux2014_x86_64 --only-binary=:all: && \
+zip -r ../update.zip . && \
+aws lambda update-function-code \
+  --function-name manga-reader-manga-api \
+  --zip-file fileb://../update.zip
 ```
 
 ## Development
@@ -259,7 +327,7 @@ aws lambda update-function-code --function-name manga-reader-manga-api --zip-fil
 
 1. **Set up environment**:
    ```bash
-   export DB_SECRET_ARN="your-secret-arn"
+   export DATABASE_URL="postgresql://user:password@host/dbname?sslmode=require"
    export S3_BUCKET="your-bucket-name"
    export ENVIRONMENT="manga-reader"
    ```
@@ -268,11 +336,12 @@ aws lambda update-function-code --function-name manga-reader-manga-api --zip-fil
    ```bash
    cd lambda
    pip install -r requirements.txt
+   pip install boto3  # For local testing only (included in Lambda runtime)
    ```
 
-3. **Run tests**:
+3. **Run migration**:
    ```bash
-   python3 -c "import lambda_function; print('Import successful')"
+   python3 scripts/migrate-database.py --database-url "$DATABASE_URL"
    ```
 
 ### Adding New Endpoints
@@ -282,6 +351,32 @@ aws lambda update-function-code --function-name manga-reader-manga-api --zip-fil
 3. Test with `test-api.sh`
 4. Deploy with `deploy.sh`
 
+## Migration from VPC/RDS Architecture
+
+If you're migrating from the old VPC-based architecture:
+
+1. **Export data from RDS**:
+   ```bash
+   pg_dump -h your-rds-endpoint -U username -d dbname > backup.sql
+   ```
+
+2. **Import to Neon**:
+   ```bash
+   psql "postgresql://user:password@host/dbname?sslmode=require" < backup.sql
+   ```
+
+3. **Delete old stacks** (after verifying migration):
+   ```bash
+   aws cloudformation delete-stack --stack-name manga-reader-serverless
+   aws cloudformation delete-stack --stack-name manga-reader-database
+   aws cloudformation delete-stack --stack-name manga-reader-network
+   ```
+
+4. **Deploy new architecture**:
+   ```bash
+   ./deploy.sh --database-url "your-neon-url"
+   ```
+
 ## License
 
 MIT License - see LICENSE file for details.
@@ -290,6 +385,14 @@ MIT License - see LICENSE file for details.
 
 For issues and questions:
 1. Check the troubleshooting section
-2. Review CloudWatch logs
-3. Verify AWS service limits
-4. Create an issue in the repository
+2. Review CloudWatch logs for Lambda errors
+3. Check Neon dashboard for database issues
+4. Verify SSL is enabled in connection string
+5. Create an issue in the repository
+
+## Links
+
+- Neon Documentation: https://neon.tech/docs
+- Neon Console: https://console.neon.tech
+- AWS Lambda Docs: https://docs.aws.amazon.com/lambda
+- API Gateway Docs: https://docs.aws.amazon.com/apigateway

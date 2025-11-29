@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'Serverless backend for manga reader - Lambda, API Gateway, S3'
+Description: 'Serverless backend for manga reader - Lambda, API Gateway, S3 (Neon PostgreSQL version)'
 
 Parameters:
   EnvironmentName:
@@ -11,6 +11,11 @@ Parameters:
     Description: Lambda runtime
     Type: String
     Default: python3.11
+
+  DatabaseURL:
+    Description: Neon PostgreSQL connection string (postgresql://user:password@host/dbname?sslmode=require)
+    Type: String
+    NoEcho: true
 
 Resources:
   # S3 Bucket for manga images
@@ -33,25 +38,6 @@ Resources:
             AllowedMethods: [GET]
             AllowedOrigins: ['*']
             MaxAge: 3600
-      NotificationConfiguration:
-        CloudWatchConfigurations:
-          - Event: s3:ObjectCreated:*
-            CloudWatchConfiguration:
-              LogGroupName: !Sub '/aws/s3/${EnvironmentName}-manga-images'
-
-  # Lambda Layer for PostgreSQL dependencies
-  PostgreSQLLayer:
-    Type: AWS::Lambda::LayerVersion
-    Properties:
-      LayerName: !Sub '${EnvironmentName}-postgresql-layer'
-      Description: 'PostgreSQL dependencies for Python Lambda functions'
-      Content:
-        S3Bucket: !Sub '${EnvironmentName}-lambda-layers-${AWS::AccountId}'
-        S3Key: 'postgresql-layer.zip'
-      CompatibleRuntimes:
-        - !Ref LambdaRuntime
-      CompatibleArchitectures:
-        - x86_64
 
   # IAM Role for Lambda functions
   LambdaExecutionRole:
@@ -66,18 +52,12 @@ Resources:
               Service: lambda.amazonaws.com
             Action: sts:AssumeRole
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Policies:
         - PolicyName: MangaReaderLambdaPolicy
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
-              - Effect: Allow
-                Action:
-                  - secretsmanager:GetSecretValue
-                Resource:
-                  - Fn::ImportValue: !Sub '${EnvironmentName}-Database-Secret-Arn'
-                  - Fn::ImportValue: !Sub '${EnvironmentName}-Database-Connection-Secret-Arn'
               - Effect: Allow
                 Action:
                   - s3:GetObject
@@ -120,18 +100,9 @@ Resources:
               }
       Environment:
         Variables:
-          DB_SECRET_ARN:
-            Fn::ImportValue: !Sub '${EnvironmentName}-Database-Connection-Secret-Arn'
+          DATABASE_URL: !Ref DatabaseURL
           S3_BUCKET: !Ref MangaImagesBucket
           ENVIRONMENT: !Ref EnvironmentName
-      VpcConfig:
-        SecurityGroupIds:
-          - Fn::ImportValue: !Sub '${EnvironmentName}-Lambda-Security-Group'
-        SubnetIds:
-          - Fn::ImportValue: !Sub '${EnvironmentName}-Private-Subnet-AZ1'
-          - Fn::ImportValue: !Sub '${EnvironmentName}-Private-Subnet-AZ2'
-      Layers:
-        - !Ref PostgreSQLLayer
       Timeout: 30
       MemorySize: 256
 
@@ -283,9 +254,3 @@ Outputs:
     Value: !GetAtt MangaImagesBucket.Arn
     Export:
       Name: !Sub '${EnvironmentName}-S3-Bucket-Arn'
-
-  PostgreSQLLayerArn:
-    Description: PostgreSQL Lambda Layer ARN
-    Value: !Ref PostgreSQLLayer
-    Export:
-      Name: !Sub '${EnvironmentName}-PostgreSQL-Layer-Arn'

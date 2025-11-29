@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Deployment script for manga reader serverless backend
+# Simplified deployment script for manga reader serverless backend with Neon PostgreSQL
 
 set -e
 
@@ -8,6 +8,7 @@ set -e
 ENVIRONMENT_NAME="manga-reader"
 AWS_REGION="us-east-1"
 AWS_ACCOUNT_ID=""
+DATABASE_URL=""
 
 # Colors for output
 RED='\033[0;31m'
@@ -51,37 +52,35 @@ check_aws_credentials() {
     print_success "AWS credentials configured (Account: $AWS_ACCOUNT_ID)"
 }
 
-create_s3_bucket() {
-    local bucket_name="$1"
+prompt_database_url() {
+    if [ -z "$DATABASE_URL" ]; then
+        echo ""
+        print_warning "DATABASE_URL not provided"
+        echo ""
+        echo "Please provide your Neon PostgreSQL connection string."
+        echo "Format: postgresql://user:password@host/dbname?sslmode=require"
+        echo ""
+        echo "To get your Neon connection string:"
+        echo "  1. Go to https://console.neon.tech"
+        echo "  2. Select your project"
+        echo "  3. Go to 'Connection Details'"
+        echo "  4. Copy the connection string"
+        echo ""
+        read -p "Enter DATABASE_URL: " DATABASE_URL
 
-    if aws s3 ls "s3://$bucket_name" &> /dev/null; then
-        print_warning "S3 bucket $bucket_name already exists"
-    else
-        print_step "Creating S3 bucket: $bucket_name"
-
-        if [ "$AWS_REGION" = "us-east-1" ]; then
-            aws s3 mb "s3://$bucket_name"
-        else
-            aws s3 mb "s3://$bucket_name" --region "$AWS_REGION"
+        if [ -z "$DATABASE_URL" ]; then
+            print_error "DATABASE_URL is required"
+            exit 1
         fi
-        print_success "S3 bucket created: $bucket_name"
+
+        # Validate format
+        if [[ ! "$DATABASE_URL" =~ ^postgresql:// ]]; then
+            print_error "Invalid DATABASE_URL format. Must start with postgresql://"
+            exit 1
+        fi
+
+        print_success "DATABASE_URL provided"
     fi
-}
-
-build_and_upload_layer() {
-    print_step "Building PostgreSQL Lambda layer"
-
-    # Create layer bucket
-    local layer_bucket="${ENVIRONMENT_NAME}-lambda-layers-${AWS_ACCOUNT_ID}"
-    create_s3_bucket "$layer_bucket"
-
-    # Build layer
-    ./scripts/build-layer.sh
-
-    # Upload layer
-    print_step "Uploading Lambda layer to S3"
-    aws s3 cp postgresql-layer.zip "s3://$layer_bucket/"
-    print_success "Lambda layer uploaded"
 }
 
 deploy_stack() {
@@ -91,21 +90,32 @@ deploy_stack() {
 
     print_step "Deploying CloudFormation stack: $stack_name"
 
-    local params="ParameterKey=EnvironmentName,ParameterValue=$ENVIRONMENT_NAME"
+    local params="ParameterKey=EnvironmentName,ParameterValue=$ENVIRONMENT_NAME ParameterKey=DatabaseURL,ParameterValue=$DATABASE_URL"
 
     if aws cloudformation describe-stacks --stack-name "$stack_name" &> /dev/null; then
         print_step "Updating existing stack: $stack_name"
         aws cloudformation update-stack \
             --stack-name "$stack_name" \
             --template-body "file://$template_file" \
-            --parameters "$params" \
-            ${capabilities:+--capabilities "$capabilities"}
+            --parameters $params \
+            ${capabilities:+--capabilities "$capabilities"} || {
+                local status=$?
+                if [ $status -eq 254 ] || [ $status -eq 255 ]; then
+                    # Check if the error is "No updates to be performed"
+                    local error_msg=$(aws cloudformation describe-stacks --stack-name "$stack_name" --query 'Stacks[0].StackStatus' --output text 2>&1)
+                    if [[ "$error_msg" == *"No updates"* ]] || aws cloudformation describe-stack-events --stack-name "$stack_name" --max-items 1 --query 'StackEvents[0].ResourceStatusReason' --output text 2>/dev/null | grep -q "No updates"; then
+                        print_warning "No updates to be performed on stack: $stack_name"
+                        return 0
+                    fi
+                fi
+                return $status
+            }
     else
         print_step "Creating new stack: $stack_name"
         aws cloudformation create-stack \
             --stack-name "$stack_name" \
             --template-body "file://$template_file" \
-            --parameters "$params" \
+            --parameters $params \
             ${capabilities:+--capabilities "$capabilities"}
     fi
 
@@ -129,7 +139,16 @@ package_and_deploy_lambda() {
 
     # Create deployment package
     cd lambda
-    zip -r ../lambda-deployment.zip . -x "*.pyc" "*__pycache__*"
+
+    # Install dependencies locally if requirements.txt exists and has content
+    if [ -s requirements.txt ]; then
+        print_step "Installing Lambda dependencies"
+        pip install -r requirements.txt -t . --platform manylinux2014_x86_64 --only-binary=:all: --upgrade || {
+            print_warning "Failed to install some dependencies, continuing anyway..."
+        }
+    fi
+
+    zip -r ../lambda-deployment.zip . -x "*.pyc" "*__pycache__*" "*.dist-info/*" "*.egg-info/*"
     cd ..
 
     # Update Lambda function code
@@ -144,22 +163,24 @@ package_and_deploy_lambda() {
 
     # Clean up
     rm lambda-deployment.zip
+
+    # Clean up installed dependencies
+    if [ -s lambda/requirements.txt ]; then
+        cd lambda
+        # Remove installed packages but keep source files
+        find . -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
+        find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
+        find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+        # Remove psycopg2 directories if they exist
+        rm -rf psycopg2* 2>/dev/null || true
+        cd ..
+    fi
 }
 
 run_database_migration() {
     print_step "Running database migration"
 
-    local secret_arn=$(aws cloudformation describe-stacks \
-        --stack-name "${ENVIRONMENT_NAME}-database" \
-        --query "Stacks[0].Outputs[?OutputKey=='DatabaseConnectionSecretArn'].OutputValue" \
-        --output text)
-
-    if [ -z "$secret_arn" ]; then
-        print_error "Could not find database secret ARN"
-        exit 1
-    fi
-
-    python3 scripts/migrate-database.py --secret-arn "$secret_arn" --region "$AWS_REGION"
+    python3 scripts/migrate-database.py --database-url "$DATABASE_URL"
     print_success "Database migration completed"
 }
 
@@ -193,15 +214,10 @@ show_outputs() {
     echo ""
     echo "📋 Stack Information:"
 
-    # Get outputs from all stacks
+    # Get outputs from stack
     local api_endpoint=$(aws cloudformation describe-stacks \
         --stack-name "${ENVIRONMENT_NAME}-serverless" \
         --query "Stacks[0].Outputs[?OutputKey=='ApiEndpoint'].OutputValue" \
-        --output text 2>/dev/null || echo "Not available")
-
-    local db_endpoint=$(aws cloudformation describe-stacks \
-        --stack-name "${ENVIRONMENT_NAME}-database" \
-        --query "Stacks[0].Outputs[?OutputKey=='DatabaseEndpoint'].OutputValue" \
         --output text 2>/dev/null || echo "Not available")
 
     local s3_bucket=$(aws cloudformation describe-stacks \
@@ -210,7 +226,7 @@ show_outputs() {
         --output text 2>/dev/null || echo "Not available")
 
     echo "  • API Endpoint: $api_endpoint"
-    echo "  • Database Endpoint: $db_endpoint"
+    echo "  • Database: Neon PostgreSQL (serverless)"
     echo "  • S3 Bucket: $s3_bucket"
     echo ""
     echo "🧪 API Endpoints:"
@@ -231,25 +247,26 @@ show_outputs() {
 
 # Main deployment flow
 main() {
-    print_step "Starting manga reader backend deployment"
+    print_step "Starting manga reader backend deployment (Neon PostgreSQL)"
 
     # Pre-flight checks
     check_aws_cli
     check_aws_credentials
+    prompt_database_url
 
-    # Build and upload Lambda layer
-    build_and_upload_layer
-
-    # Deploy infrastructure stacks
-    deploy_stack "${ENVIRONMENT_NAME}-network" "infrastructure/01-network.yaml"
-    deploy_stack "${ENVIRONMENT_NAME}-database" "infrastructure/02-database.yaml"
+    # Deploy infrastructure stack
     deploy_stack "${ENVIRONMENT_NAME}-serverless" "infrastructure/03-serverless.yaml" "CAPABILITY_NAMED_IAM"
 
     # Deploy Lambda code
     package_and_deploy_lambda
 
     # Run database migration
-    run_database_migration
+    read -p "Do you want to run database migration? (y/n): " run_migration
+    if [[ "$run_migration" =~ ^[Yy]$ ]]; then
+        run_database_migration
+    else
+        print_warning "Skipping database migration"
+    fi
 
     # Test deployment
     test_api
@@ -269,10 +286,15 @@ while [[ $# -gt 0 ]]; do
             ENVIRONMENT_NAME="$2"
             shift 2
             ;;
+        --database-url)
+            DATABASE_URL="$2"
+            shift 2
+            ;;
         --help)
-            echo "Usage: $0 [--region AWS_REGION] [--environment ENV_NAME]"
-            echo "  --region:      AWS region (default: us-east-1)"
-            echo "  --environment: Environment name (default: manga-reader)"
+            echo "Usage: $0 [--region AWS_REGION] [--environment ENV_NAME] [--database-url DATABASE_URL]"
+            echo "  --region:       AWS region (default: us-east-1)"
+            echo "  --environment:  Environment name (default: manga-reader)"
+            echo "  --database-url: Neon PostgreSQL connection string"
             exit 0
             ;;
         *)
