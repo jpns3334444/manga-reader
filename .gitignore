@@ -1,0 +1,27 @@
+# Environment files (contains secrets!)
+.env
+.env.local
+.env.production
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Lambda deployment artifacts
+lambda-deployment.zip
+postgresql-layer.zip
+lambda/psycopg2*
+lambda/*.dist-info/
+lambda/*.egg-info/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
