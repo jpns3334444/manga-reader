@@ -79,6 +79,7 @@ Resources:
   # Lambda function for manga API
   MangaApiFunction:
     Type: AWS::Lambda::Function
+    DependsOn: LambdaExecutionRole
     Properties:
       FunctionName: !Sub '${EnvironmentName}-manga-api'
       Runtime: !Ref LambdaRuntime
