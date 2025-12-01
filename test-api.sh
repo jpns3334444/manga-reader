@@ -4,9 +4,10 @@
 
 set -e
 
-# Configuration
 ENVIRONMENT_NAME="manga-reader"
 API_ENDPOINT=""
+TEST_MANGA_ID=""
+TEST_CHAPTER_ID=""
 
 # Colors
 GREEN='\033[0;32m'
@@ -95,6 +96,7 @@ create_sample_manga() {
     if [ "$status_code" = "201" ]; then
         print_success "Manga created successfully"
         local manga_id=$(echo "$body" | jq -r '.manga.id')
+        TEST_MANGA_ID="$manga_id"
         echo "Manga ID: $manga_id"
 
         # Create a sample chapter
@@ -121,6 +123,7 @@ create_sample_manga() {
         if [ "$status_code" = "201" ]; then
             print_success "Chapter created successfully"
             local chapter_id=$(echo "$body" | jq -r '.chapter.id')
+            TEST_CHAPTER_ID="$chapter_id"
             echo "Chapter ID: $chapter_id"
             echo "$manga_id:$chapter_id"
         else
@@ -167,6 +170,27 @@ run_tests() {
     echo "🏁 API Tests Completed"
 }
 
+cleanup_test_data() {
+    if [ -z "$TEST_MANGA_ID" ]; then return; fi
+
+    echo ""
+    print_test "Cleaning up test data"
+
+    if [ -z "$DATABASE_URL" ]; then
+        read -p "Enter DATABASE_URL for cleanup (or press Enter to skip): " DATABASE_URL
+        if [ -z "$DATABASE_URL" ]; then
+            print_error "Skipping cleanup - no DATABASE_URL"
+            return
+        fi
+    fi
+
+    psql "$DATABASE_URL" -c "DELETE FROM chapter_pages WHERE chapter_id IN (SELECT id FROM chapters WHERE manga_id = '$TEST_MANGA_ID');" 2>/dev/null || true
+    psql "$DATABASE_URL" -c "DELETE FROM chapters WHERE manga_id = '$TEST_MANGA_ID';" 2>/dev/null || true
+    psql "$DATABASE_URL" -c "DELETE FROM manga WHERE id = '$TEST_MANGA_ID';" 2>/dev/null || true
+
+    print_success "Test data cleaned up"
+}
+
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -197,3 +221,4 @@ if [ -z "$API_ENDPOINT" ]; then
 fi
 
 run_tests
+cleanup_test_data

@@ -3,9 +3,7 @@ import os
 import boto3
 import psycopg2
 import psycopg2.extras
-from urllib.parse import unquote
 import logging
-from decimal import Decimal
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -14,7 +12,6 @@ s3_client = boto3.client('s3')
 
 DATABASE_URL = os.environ['DATABASE_URL']
 S3_BUCKET = os.environ['S3_BUCKET']
-ENVIRONMENT = os.environ['ENVIRONMENT']
 
 def get_database_connection():
     """Get database connection using DATABASE_URL environment variable."""
@@ -177,10 +174,6 @@ def lambda_handler(event, context):
         http_method = event.get('requestContext', {}).get('http', {}).get('method')
         path = event.get('requestContext', {}).get('http', {}).get('path', '')
         path_parameters = event.get('pathParameters') or {}
-
-        # Handle CORS preflight
-        if http_method == 'OPTIONS':
-            return create_response(200, {'message': 'CORS preflight'})
 
         # Get database connection
         connection = get_database_connection()

@@ -178,13 +178,6 @@ Resources:
       RouteKey: 'POST /chapters'
       Target: !Sub 'integrations/${LambdaIntegration}'
 
-  OptionsRoute:
-    Type: AWS::ApiGatewayV2::Route
-    Properties:
-      ApiId: !Ref MangaApiGateway
-      RouteKey: 'OPTIONS /{proxy+}'
-      Target: !Sub 'integrations/${LambdaIntegration}'
-
   # API Gateway Stage
   ApiStage:
     Type: AWS::ApiGatewayV2::Stage
