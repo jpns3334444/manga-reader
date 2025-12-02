@@ -92,7 +92,7 @@ export default function ChapterReaderPage() {
             <button
               onClick={goToPrev}
               disabled={!prevChapter}
-              className="p-2 rounded-lg bg-[#2d2d2d] hover:bg-[#363636] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="p-2 bg-[#2d2d2d] hover:bg-[#363636] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
               aria-label="Previous chapter"
             >
               <svg
@@ -112,7 +112,7 @@ export default function ChapterReaderPage() {
             <button
               onClick={goToNext}
               disabled={!nextChapter}
-              className="p-2 rounded-lg bg-[#2d2d2d] hover:bg-[#363636] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="p-2 bg-[#2d2d2d] hover:bg-[#363636] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
               aria-label="Next chapter"
             >
               <svg
@@ -155,7 +155,7 @@ export default function ChapterReaderPage() {
           {prevChapter ? (
             <Link
               href={`/manga/${slug}/chapter/${prevChapter.number}`}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#2d2d2d] hover:bg-[#363636] text-[#e5e5e5] transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-[#2d2d2d] hover:bg-[#363636] text-[#e5e5e5] transition-colors"
             >
               <svg
                 className="w-5 h-5"
@@ -186,7 +186,7 @@ export default function ChapterReaderPage() {
           {nextChapter ? (
             <Link
               href={`/manga/${slug}/chapter/${nextChapter.number}`}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#2d2d2d] hover:bg-[#363636] text-[#e5e5e5] transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-[#2d2d2d] hover:bg-[#363636] text-[#e5e5e5] transition-colors"
             >
               Next
               <svg
@@ -210,7 +210,7 @@ export default function ChapterReaderPage() {
       </div>
 
       {/* Keyboard hint */}
-      <div className="fixed bottom-4 right-4 text-xs text-[#737373] bg-[#242424] px-3 py-2 rounded-lg opacity-75">
+      <div className="fixed bottom-4 right-4 text-xs text-[#737373] bg-[#242424] px-3 py-2 opacity-75">
         Use ← → arrow keys to navigate
       </div>
     </main>

@@ -27,7 +27,7 @@ export default async function MangaPage({ params }: MangaPageProps) {
       <div className="flex flex-col md:flex-row gap-6 mb-8">
         {/* Cover */}
         <div className="flex-shrink-0 w-[200px] mx-auto md:mx-0">
-          <div className="relative aspect-[2/3] rounded-lg overflow-hidden bg-[#2d2d2d]">
+          <div className="relative aspect-[2/3] overflow-hidden bg-[#2d2d2d]">
             <Image
               src={manga.coverImage}
               alt={manga.title}
@@ -47,14 +47,14 @@ export default async function MangaPage({ params }: MangaPageProps) {
 
           <div className="flex flex-wrap gap-2 mb-4">
             <span
-              className={`px-2 py-1 text-xs font-medium text-white rounded ${statusColors[manga.status]}`}
+              className={`px-2 py-1 text-xs font-medium text-white ${statusColors[manga.status]}`}
             >
               {manga.status.charAt(0).toUpperCase() + manga.status.slice(1)}
             </span>
             {manga.genres.map((genre) => (
               <span
                 key={genre}
-                className="px-2 py-1 text-xs font-medium text-[#a3a3a3] bg-[#2d2d2d] rounded"
+                className="px-2 py-1 text-xs font-medium text-[#a3a3a3] bg-[#2d2d2d]"
               >
                 {genre}
               </span>
@@ -87,7 +87,7 @@ export default async function MangaPage({ params }: MangaPageProps) {
       {/* Chapter list */}
       <section>
         <h2 className="text-xl font-bold text-[#e5e5e5] mb-4">Chapters</h2>
-        <div className="bg-[#242424] rounded-lg overflow-hidden">
+        <div className="bg-[#242424] overflow-hidden">
           {[...manga.chapters].reverse().map((chapter, index) => (
             <Link
               key={chapter.id}

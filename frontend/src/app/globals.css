@@ -1,3 +1,4 @@
+@import url('https://api.fontshare.com/v2/css?f[]=public-sans@400,500,600&f[]=new-title@400&display=swap');
 @import "tailwindcss";
 
 :root {
@@ -24,6 +25,7 @@
   --color-accent-primary: var(--accent-primary);
   --color-accent-secondary: var(--accent-secondary);
   --color-border: var(--border-color);
+  --font-heading: var(--font-clash-grotesk), system-ui, sans-serif;
 }
 
 * {
@@ -33,9 +35,21 @@
 body {
   background: var(--bg-primary);
   color: var(--text-primary);
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    sans-serif;
+  font-family: 'Public Sans', system-ui, sans-serif;
+  font-size: 1.3rem;
 }
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'New Title', system-ui, sans-serif;
+  font-weight: 400;
+}
+
+h1 { font-size: 2.6rem; }
+h2 { font-size: 2rem; }
+h3 { font-size: 1.56rem; }
+h4 { font-size: 1.3rem; }
+h5 { font-size: 1.17rem; }
+h6 { font-size: 1.04rem; }
 
 /* Custom scrollbar */
 ::-webkit-scrollbar {

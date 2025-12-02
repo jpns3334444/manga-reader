@@ -43,7 +43,7 @@ export default function MangaCarousel({ title, manga }: MangaCarouselProps) {
           <button
             onClick={() => scroll("left")}
             disabled={!canScrollLeft}
-            className="p-2 rounded-lg bg-[#2d2d2d] hover:bg-[#363636] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            className="p-2 bg-[#2d2d2d] hover:bg-[#363636] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             aria-label="Scroll left"
           >
             <svg
@@ -63,7 +63,7 @@ export default function MangaCarousel({ title, manga }: MangaCarouselProps) {
           <button
             onClick={() => scroll("right")}
             disabled={!canScrollRight}
-            className="p-2 rounded-lg bg-[#2d2d2d] hover:bg-[#363636] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            className="p-2 bg-[#2d2d2d] hover:bg-[#363636] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             aria-label="Scroll right"
           >
             <svg
@@ -100,7 +100,7 @@ export default function MangaCarousel({ title, manga }: MangaCarouselProps) {
               href={`/manga/${m.slug}`}
               className="flex-shrink-0 w-[160px] group"
             >
-              <div className="relative aspect-[2/3] bg-[#2d2d2d] rounded-lg overflow-hidden border-2 border-transparent hover:border-[#ff6740]">
+              <div className="relative aspect-[2/3] bg-[#2d2d2d] overflow-hidden border-2 border-transparent hover:border-[#ff6740]">
                 <Image
                   src={m.coverImage}
                   alt={m.title}
