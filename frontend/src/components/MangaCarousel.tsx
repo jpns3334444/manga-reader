@@ -4,6 +4,7 @@ import { useState, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import type { Manga } from "@/lib/data";
+import MangaTooltip from "./MangaTooltip";
 
 interface MangaCarouselProps {
   title: string;
@@ -88,25 +89,32 @@ export default function MangaCarousel({ title, manga }: MangaCarouselProps) {
         className="flex gap-4 overflow-x-auto hide-scrollbar pb-2"
       >
         {manga.map((m) => (
-          <Link
+          <MangaTooltip
             key={m.id}
-            href={`/manga/${m.slug}`}
-            className="flex-shrink-0 w-[160px] group"
+            title={m.title}
+            description={m.description}
+            genres={m.genres}
+            coverImage={m.coverImage}
           >
-            <div className="relative aspect-[2/3] rounded-lg overflow-hidden bg-[#2d2d2d]">
-              <Image
-                src={m.coverImage}
-                alt={m.title}
-                fill
-                className="object-cover transition-transform duration-300 group-hover:scale-105"
-                sizes="160px"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-            </div>
-            <h3 className="mt-2 text-sm font-medium text-[#e5e5e5] line-clamp-2 group-hover:text-[#ff6740] transition-colors">
-              {m.title}
-            </h3>
-          </Link>
+            <Link
+              href={`/manga/${m.slug}`}
+              className="flex-shrink-0 w-[160px] group"
+            >
+              <div className="relative aspect-[2/3] bg-[#2d2d2d] rounded-lg overflow-hidden border-2 border-transparent hover:border-[#ff6740]">
+                <Image
+                  src={m.coverImage}
+                  alt={m.title}
+                  fill
+                  className="object-cover group-hover:brightness-110"
+                  sizes="160px"
+                />
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full pointer-events-none" />
+              </div>
+              <h3 className="mt-2 text-sm font-medium text-[#e5e5e5] line-clamp-2 group-hover:text-[#ff6740] transition-colors">
+                {m.title}
+              </h3>
+            </Link>
+          </MangaTooltip>
         ))}
       </div>
     </section>

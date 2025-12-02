@@ -24,6 +24,8 @@ export interface LatestUpdate {
   mangaId: string;
   mangaSlug: string;
   mangaTitle: string;
+  description: string;
+  genres: string[];
   coverImage: string;
   chapterNumber: number;
   chapterTitle: string;
@@ -37,7 +39,7 @@ const mangaList: Manga[] = [
     title: "Demon Blade Chronicles",
     description:
       "In a world where demons roam freely, one young swordsman discovers an ancient blade that grants him unimaginable power—but at a terrible cost. Follow Ryuki as he battles both external demons and the darkness within, seeking to protect those he loves while unraveling the mystery of his cursed weapon.",
-    coverImage: "https://picsum.photos/300/450?random=1",
+    coverImage: "https://cdn.myanimelist.net/images/manga/3/179882l.jpg",
     status: "ongoing",
     genres: ["Action", "Fantasy", "Supernatural"],
     author: "Takeshi Yamamoto",
@@ -57,7 +59,7 @@ const mangaList: Manga[] = [
     title: "Moonlit Academy",
     description:
       "When ordinary high school student Hana receives a mysterious invitation to attend the prestigious Moonlit Academy, she discovers a hidden world of magic, supernatural beings, and ancient rivalries. As she learns to harness her latent powers, she must navigate complex relationships and uncover the truth about her own heritage.",
-    coverImage: "https://picsum.photos/300/450?random=2",
+    coverImage: "https://cdn.myanimelist.net/images/manga/1/268224l.jpg",
     status: "ongoing",
     genres: ["Fantasy", "Romance", "School Life"],
     author: "Sakura Mizuki",
@@ -77,7 +79,7 @@ const mangaList: Manga[] = [
     title: "Steel Fist Revolution",
     description:
       "In a dystopian future where corporations rule with iron fists, underground fighter Jin leads a rebellion against the oppressive regime. With his cybernetic enhancements and unbreakable will, he fights for freedom in brutal arena battles while building an army of resistance fighters.",
-    coverImage: "https://picsum.photos/300/450?random=3",
+    coverImage: "https://cdn.myanimelist.net/images/manga/3/222295l.jpg",
     status: "ongoing",
     genres: ["Action", "Sci-Fi", "Drama"],
     author: "Kenji Nakamura",
@@ -97,7 +99,7 @@ const mangaList: Manga[] = [
     title: "Culinary Battle Royale",
     description:
       "Aspiring chef Yuto enters the most prestigious cooking competition in Japan, where young culinary geniuses battle for supremacy. Each dish tells a story, and every competition pushes the boundaries of gastronomy. Can Yuto's humble home cooking style triumph over elite academy-trained rivals?",
-    coverImage: "https://picsum.photos/300/450?random=4",
+    coverImage: "https://cdn.myanimelist.net/images/manga/3/188896l.jpg",
     status: "completed",
     genres: ["Comedy", "Slice of Life", "Drama"],
     author: "Megumi Sato",
@@ -117,7 +119,7 @@ const mangaList: Manga[] = [
     title: "Phantom Detective",
     description:
       "Detective Shinji Kudo can see ghosts—a gift that makes him invaluable in solving the most mysterious cases. But when a serial killer begins targeting spirits themselves, Shinji must delve into the supernatural underworld to stop a threat that endangers both the living and the dead.",
-    coverImage: "https://picsum.photos/300/450?random=5",
+    coverImage: "https://cdn.myanimelist.net/images/manga/2/253146l.jpg",
     status: "ongoing",
     genres: ["Mystery", "Supernatural", "Thriller"],
     author: "Rei Yoshida",
@@ -137,7 +139,7 @@ const mangaList: Manga[] = [
     title: "Dragon Emperor Rising",
     description:
       "Cast out from his noble family and left for dead, young prince Kaito bonds with the last dragon egg in existence. Together with his dragon companion, he must reclaim his throne and unite a fractured kingdom against an ancient evil awakening in the north.",
-    coverImage: "https://picsum.photos/300/450?random=6",
+    coverImage: "https://cdn.myanimelist.net/images/manga/1/268892l.jpg",
     status: "ongoing",
     genres: ["Fantasy", "Action", "Adventure"],
     author: "Hiroshi Ogawa",
@@ -157,7 +159,7 @@ const mangaList: Manga[] = [
     title: "Heartstrings",
     description:
       "Two musicians from completely different worlds—classical violinist Aoi and street guitarist Ren—meet by chance and discover an undeniable musical chemistry. As they collaborate on a competition piece, they must confront their own dreams, family expectations, and growing feelings for each other.",
-    coverImage: "https://picsum.photos/300/450?random=7",
+    coverImage: "https://cdn.myanimelist.net/images/manga/3/188896l.jpg",
     status: "ongoing",
     genres: ["Romance", "Music", "Drama"],
     author: "Yui Hayashi",
@@ -177,7 +179,7 @@ const mangaList: Manga[] = [
     title: "Void Hunters",
     description:
       "When rifts to other dimensions begin appearing across the world, a specialized unit of hunters is formed to combat the creatures emerging from the void. Rookie hunter Akira must prove herself among legendary veterans while uncovering a conspiracy that threatens reality itself.",
-    coverImage: "https://picsum.photos/300/450?random=8",
+    coverImage: "https://cdn.myanimelist.net/images/manga/3/179882l.jpg",
     status: "ongoing",
     genres: ["Action", "Sci-Fi", "Horror"],
     author: "Taro Kimura",
@@ -197,7 +199,7 @@ const mangaList: Manga[] = [
     title: "Immortal Gambit",
     description:
       "For centuries, immortal beings have played a deadly game for ultimate power. When mortal chess prodigy Shiro accidentally becomes a piece in this ancient contest, he must use his strategic genius to survive against beings who have played for millennia.",
-    coverImage: "https://picsum.photos/300/450?random=9",
+    coverImage: "https://cdn.myanimelist.net/images/manga/2/164523l.jpg",
     status: "hiatus",
     genres: ["Fantasy", "Psychological", "Thriller"],
     author: "Naomi Watanabe",
@@ -217,7 +219,7 @@ const mangaList: Manga[] = [
     title: "Kitchen Witch",
     description:
       "Mio runs a cozy café where every dish is infused with a little magic. Whether it's healing heartbreak, boosting confidence, or bringing luck, her enchanted recipes help customers with their everyday troubles. A heartwarming slice-of-life about food, magic, and human connection.",
-    coverImage: "https://picsum.photos/300/450?random=10",
+    coverImage: "https://cdn.myanimelist.net/images/manga/3/214566l.jpg",
     status: "ongoing",
     genres: ["Slice of Life", "Fantasy", "Comedy"],
     author: "Hana Kobayashi",
@@ -237,7 +239,7 @@ const mangaList: Manga[] = [
     title: "Shadow Monarch",
     description:
       "After dying in a dungeon raid, hunter Sung awakens with the unique ability to command shadows of the defeated. Starting from the weakest rank, he begins a meteoric rise through the hunter rankings, accumulating an ever-growing army of shadow soldiers.",
-    coverImage: "https://picsum.photos/300/450?random=11",
+    coverImage: "https://cdn.myanimelist.net/images/manga/3/222295l.jpg",
     status: "completed",
     genres: ["Action", "Fantasy", "Adventure"],
     author: "Chugong",
@@ -257,7 +259,7 @@ const mangaList: Manga[] = [
     title: "Samurai Champloo Roads",
     description:
       "In Edo-era Japan, three unlikely companions—a ronin with a mysterious past, a wild hip-hop inspired swordsman, and a determined young woman—travel together searching for 'the samurai who smells of sunflowers.' Their journey is filled with action, humor, and unexpected bonds.",
-    coverImage: "https://picsum.photos/300/450?random=12",
+    coverImage: "https://cdn.myanimelist.net/images/manga/2/258749l.jpg",
     status: "ongoing",
     genres: ["Action", "Historical", "Comedy"],
     author: "Shinichiro Watanabe",
@@ -316,6 +318,8 @@ export function getLatestUpdates(): LatestUpdate[] {
         mangaId: manga.id,
         mangaSlug: manga.slug,
         mangaTitle: manga.title,
+        description: manga.description,
+        genres: manga.genres,
         coverImage: manga.coverImage,
         chapterNumber: latestChapter.number,
         chapterTitle: latestChapter.title,
