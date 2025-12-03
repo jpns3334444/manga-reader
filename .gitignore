@@ -21,6 +21,8 @@ lambda/*.egg-info/
 .idea/
 .vscode/
 *.swp
+CLAUDE.md
+package-lock.json
 
 # OS
 .DS_Store
