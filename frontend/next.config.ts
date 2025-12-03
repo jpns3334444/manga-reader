@@ -11,6 +11,14 @@ const nextConfig: NextConfig = {
         protocol: "https",
         hostname: "cdn.myanimelist.net",
       },
+      {
+        protocol: "https",
+        hostname: "manga-reader-manga-images-418987949764.s3.amazonaws.com",
+      },
+      {
+        protocol: "https",
+        hostname: "manga-reader-manga-images-418987949764.s3.us-east-1.amazonaws.com",
+      },
     ],
   },
 };

@@ -53,6 +53,21 @@ def generate_presigned_url(s3_key, expiration=3600):
         logger.error(f"Failed to generate presigned URL: {str(e)}")
         return None
 
+def process_manga_cover(manga):
+    """Generate presigned URL for manga cover if it's an S3 key."""
+    if manga and manga.get('cover_image_url'):
+        cover = manga['cover_image_url']
+        # If it looks like an S3 key (not a full URL), generate presigned URL
+        if cover and not cover.startswith('http'):
+            manga['cover_image_url'] = generate_presigned_url(cover)
+    return manga
+
+def process_manga_list_covers(manga_list):
+    """Process cover images for a list of manga."""
+    for manga in manga_list:
+        process_manga_cover(manga)
+    return manga_list
+
 def get_manga_list(connection, popular=False):
     """Get list of all manga series."""
     cursor = connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -288,11 +303,13 @@ def lambda_handler(event, context):
                     # GET /manga - List all manga (with optional ?popular=true)
                     popular = query_params.get('popular', '').lower() == 'true'
                     manga_list = get_manga_list(connection, popular=popular)
+                    process_manga_list_covers(manga_list)
                     return create_response(200, {'manga': manga_list})
 
                 elif path == '/manga/latest':
                     # GET /manga/latest - Get manga sorted by most recent chapter
                     manga_list = get_latest_manga(connection)
+                    process_manga_list_covers(manga_list)
                     return create_response(200, {'manga': manga_list})
 
                 elif path.startswith('/manga/slug/'):
@@ -315,6 +332,7 @@ def lambda_handler(event, context):
                         manga = get_manga_by_slug(connection, slug)
                         if not manga:
                             return create_response(404, {'error': 'Manga not found'})
+                        process_manga_cover(manga)
                         return create_response(200, {'manga': manga})
 
                 elif path.startswith('/manga/') and path.endswith('/chapters'):
@@ -336,6 +354,7 @@ def lambda_handler(event, context):
                     if not manga:
                         return create_response(404, {'error': 'Manga not found'})
 
+                    process_manga_cover(manga)
                     return create_response(200, {'manga': manga})
 
                 elif path.startswith('/chapters/'):
