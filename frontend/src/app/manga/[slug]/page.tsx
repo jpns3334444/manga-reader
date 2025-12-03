@@ -1,8 +1,16 @@
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getMangaBySlug } from "@/lib/api";
+import { getMangaBySlug, getAllMangaSlugs } from "@/lib/api";
 import { formatTimeAgo } from "@/lib/data";
+
+export const dynamic = "force-static";
+export const dynamicParams = true;
+
+export async function generateStaticParams() {
+  const slugs = await getAllMangaSlugs();
+  return slugs.map((slug) => ({ slug }));
+}
 
 interface MangaPageProps {
   params: Promise<{ slug: string }>;

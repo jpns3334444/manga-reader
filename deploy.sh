@@ -13,6 +13,8 @@ fi
 
 ENVIRONMENT_NAME="manga-reader"
 DATABASE_URL="${DATABASE_URL:-""}"
+NEXTJS_URL="${NEXTJS_URL:-""}"
+REVALIDATION_SECRET="${REVALIDATION_SECRET:-""}"
 
 # Colors
 RED='\033[0;31m'
@@ -51,13 +53,29 @@ prompt_database_url() {
     fi
 }
 
+prompt_nextjs_url() {
+    if [ -n "$NEXTJS_URL" ]; then return; fi
+
+    print_warning "NEXTJS_URL not provided (optional - for cache invalidation)"
+    echo "Format: https://your-site.vercel.app (or leave empty to skip)"
+    read -p "Enter NEXTJS_URL: " NEXTJS_URL
+}
+
+prompt_revalidation_secret() {
+    if [ -n "$REVALIDATION_SECRET" ]; then return; fi
+    if [ -z "$NEXTJS_URL" ]; then return; fi
+
+    print_warning "REVALIDATION_SECRET not provided (required for cache invalidation)"
+    read -p "Enter REVALIDATION_SECRET: " REVALIDATION_SECRET
+}
+
 deploy_stack() {
     local stack_name="$1"
     local template_file="$2"
 
     print_step "Deploying stack: $stack_name"
 
-    local params="ParameterKey=EnvironmentName,ParameterValue=$ENVIRONMENT_NAME ParameterKey=DatabaseURL,ParameterValue=$DATABASE_URL"
+    local params="ParameterKey=EnvironmentName,ParameterValue=$ENVIRONMENT_NAME ParameterKey=DatabaseURL,ParameterValue=$DATABASE_URL ParameterKey=NextJSURL,ParameterValue=$NEXTJS_URL ParameterKey=RevalidationSecret,ParameterValue=$REVALIDATION_SECRET"
     local status=$(aws cloudformation describe-stacks --stack-name "$stack_name" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo "DOES_NOT_EXIST")
 
     # Clean up failed stacks
@@ -87,22 +105,31 @@ deploy_stack() {
 }
 
 package_and_deploy_lambda() {
-    print_step "Packaging Lambda function"
+    print_step "Packaging Lambda functions"
     cd lambda
 
     if [ -s requirements.txt ]; then
-        pip install -r requirements.txt -t . --platform manylinux2014_x86_64 --only-binary=:all: --upgrade 2>/dev/null || true
+        pip install -r requirements.txt -t . --platform manylinux2014_x86_64 --implementation cp --python-version 3.11 --only-binary=:all: --upgrade
     fi
 
     zip -rq ../lambda-deployment.zip . -x "*.pyc" "*__pycache__*" "*.dist-info/*"
     cd ..
 
+    # Deploy main API Lambda
+    print_step "Deploying main API Lambda"
     aws lambda update-function-code --function-name "${ENVIRONMENT_NAME}-manga-api" --zip-file "fileb://lambda-deployment.zip" >/dev/null
+    print_success "Main API Lambda deployed"
+
+    # Deploy invalidation Lambda
+    print_step "Deploying invalidation Lambda"
+    aws lambda update-function-code --function-name "${ENVIRONMENT_NAME}-invalidation" --zip-file "fileb://lambda-deployment.zip" >/dev/null
+    print_success "Invalidation Lambda deployed"
+
     rm lambda-deployment.zip
 
     # Cleanup installed packages
     cd lambda && rm -rf psycopg2* *.dist-info *.egg-info __pycache__ 2>/dev/null || true && cd ..
-    print_success "Lambda deployed"
+    print_success "All Lambda functions deployed"
 }
 
 run_migration() {
@@ -127,7 +154,9 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --environment) ENVIRONMENT_NAME="$2"; shift 2 ;;
         --database-url) DATABASE_URL="$2"; shift 2 ;;
-        --help) echo "Usage: $0 [--environment NAME] [--database-url URL]"; exit 0 ;;
+        --nextjs-url) NEXTJS_URL="$2"; shift 2 ;;
+        --revalidation-secret) REVALIDATION_SECRET="$2"; shift 2 ;;
+        --help) echo "Usage: $0 [--environment NAME] [--database-url URL] [--nextjs-url URL] [--revalidation-secret SECRET]"; exit 0 ;;
         *) print_error "Unknown option: $1"; exit 1 ;;
     esac
 done
@@ -135,6 +164,8 @@ done
 # Main
 check_prerequisites
 prompt_database_url
+prompt_nextjs_url
+prompt_revalidation_secret
 deploy_stack "${ENVIRONMENT_NAME}-serverless" "infrastructure/03-serverless.yaml"
 package_and_deploy_lambda
 run_migration

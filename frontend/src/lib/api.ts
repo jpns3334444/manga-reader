@@ -15,9 +15,7 @@ async function fetchApi<T>(endpoint: string): Promise<T> {
     throw new Error("API_URL is not configured");
   }
 
-  const response = await fetch(`${API_URL}${endpoint}`, {
-    next: { revalidate: 60 },
-  });
+  const response = await fetch(`${API_URL}${endpoint}`);
 
   if (!response.ok) {
     throw new ApiError(response.status, `API error: ${response.status}`);
@@ -87,18 +85,66 @@ export interface ApiChapterDetail extends ApiChapter {
 
 // Fetch functions
 export async function getMangaList(): Promise<ApiManga[]> {
-  const data = await fetchApi<MangaResponse>("/manga");
-  return data.manga;
+  try {
+    const data = await fetchApi<MangaResponse>("/manga");
+    return data.manga;
+  } catch (error) {
+    if (error instanceof ApiError) {
+      return [];
+    }
+    throw error;
+  }
+}
+
+export async function getAllMangaSlugs(): Promise<string[]> {
+  const manga = await getMangaList();
+  return manga.map((m) => m.slug);
+}
+
+export async function getAllChapterParams(): Promise<
+  { slug: string; num: string }[]
+> {
+  try {
+    const manga = await getMangaList();
+    const params: { slug: string; num: string }[] = [];
+
+    for (const m of manga) {
+      const mangaData = await getMangaBySlug(m.slug);
+      if (mangaData?.chapters) {
+        for (const ch of mangaData.chapters) {
+          params.push({ slug: m.slug, num: ch.chapter_number });
+        }
+      }
+    }
+
+    return params;
+  } catch {
+    return [];
+  }
 }
 
 export async function getPopularManga(): Promise<ApiManga[]> {
-  const data = await fetchApi<MangaResponse>("/manga?popular=true");
-  return data.manga;
+  try {
+    const data = await fetchApi<MangaResponse>("/manga?popular=true");
+    return data.manga;
+  } catch (error) {
+    if (error instanceof ApiError) {
+      return [];
+    }
+    throw error;
+  }
 }
 
 export async function getLatestUpdates(): Promise<LatestMangaResponse["manga"]> {
-  const data = await fetchApi<LatestMangaResponse>("/manga/latest");
-  return data.manga;
+  try {
+    const data = await fetchApi<LatestMangaResponse>("/manga/latest");
+    return data.manga;
+  } catch (error) {
+    if (error instanceof ApiError) {
+      return [];
+    }
+    throw error;
+  }
 }
 
 export async function getMangaBySlug(

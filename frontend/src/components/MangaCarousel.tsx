@@ -116,9 +116,9 @@ export default function MangaCarousel({ title, manga }: MangaCarouselProps) {
                 )}
                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full pointer-events-none" />
               </div>
-              <h3 className="mt-2 text-sm font-medium text-[#e5e5e5] line-clamp-2 group-hover:text-[#ff6740] transition-colors">
+              <p className="mt-2 text-sm font-medium text-[#e5e5e5] line-clamp-2 group-hover:text-[#ff6740] transition-colors">
                 {m.title}
-              </h3>
+              </p>
             </Link>
           </MangaTooltip>
         ))}

@@ -17,6 +17,17 @@ Parameters:
     Type: String
     NoEcho: true
 
+  NextJSURL:
+    Description: Next.js frontend URL for cache revalidation (e.g., https://your-site.vercel.app)
+    Type: String
+    Default: ''
+
+  RevalidationSecret:
+    Description: Secret token for Next.js revalidation API authentication
+    Type: String
+    NoEcho: true
+    Default: ''
+
 Resources:
   # S3 Bucket for manga images
   MangaImagesBucket:
@@ -29,15 +40,74 @@ Resources:
               SSEAlgorithm: AES256
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
-        BlockPublicPolicy: true
+        BlockPublicPolicy: false
         IgnorePublicAcls: true
-        RestrictPublicBuckets: true
+        RestrictPublicBuckets: false
       CorsConfiguration:
         CorsRules:
           - AllowedHeaders: ['*']
             AllowedMethods: [GET]
             AllowedOrigins: ['*']
             MaxAge: 3600
+
+  # S3 Bucket Policy to allow CloudFront access via OAC
+  MangaImagesBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref MangaImagesBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCloudFrontServicePrincipal
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub '${MangaImagesBucket.Arn}/*'
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}'
+
+  # CloudFront Origin Access Control for S3
+  CloudFrontOAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub '${EnvironmentName}-s3-oac'
+        Description: OAC for manga images S3 bucket
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # CloudFront Distribution for serving manga images
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub '${EnvironmentName} manga images CDN'
+        DefaultRootObject: ''
+        HttpVersion: http2and3
+        PriceClass: PriceClass_100
+        Origins:
+          - Id: S3Origin
+            DomainName: !GetAtt MangaImagesBucket.RegionalDomainName
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+            OriginAccessControlId: !GetAtt CloudFrontOAC.Id
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          CachedMethods:
+            - GET
+            - HEAD
+          Compress: true
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6  # Managed-CachingOptimized
+          ResponseHeadersPolicyId: 60669652-455b-4ae9-85a4-c4c02393f86c  # Managed-SimpleCORS
 
   # IAM Role for Lambda functions
   LambdaExecutionRole:
@@ -75,6 +145,10 @@ Resources:
                   - logs:CreateLogStream
                   - logs:PutLogEvents
                 Resource: '*'
+              - Effect: Allow
+                Action:
+                  - events:PutEvents
+                Resource: !GetAtt MangaEventsEventBus.Arn
 
   # Lambda function for manga API
   MangaApiFunction:
@@ -104,6 +178,8 @@ Resources:
           DATABASE_URL: !Ref DatabaseURL
           S3_BUCKET: !Ref MangaImagesBucket
           ENVIRONMENT: !Ref EnvironmentName
+          CLOUDFRONT_DOMAIN: !GetAtt CloudFrontDistribution.DomainName
+          EVENTBRIDGE_BUS_NAME: !Ref MangaEventsEventBus
       Timeout: 30
       MemorySize: 256
 
@@ -233,6 +309,96 @@ Resources:
       LogGroupName: !Sub '/aws/apigateway/${EnvironmentName}-manga-api'
       RetentionInDays: 14
 
+  # EventBridge Event Bus for manga events
+  MangaEventsEventBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: !Sub '${EnvironmentName}-manga-events'
+
+  # IAM Role for Invalidation Lambda
+  InvalidationLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${EnvironmentName}-invalidation-lambda-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: InvalidationLambdaPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - cloudfront:CreateInvalidation
+                Resource: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}'
+
+  # Invalidation Lambda function
+  InvalidationFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: InvalidationLambdaRole
+    Properties:
+      FunctionName: !Sub '${EnvironmentName}-invalidation'
+      Runtime: !Ref LambdaRuntime
+      Handler: invalidation_handler.lambda_handler
+      Role: !GetAtt InvalidationLambdaRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          def lambda_handler(event, context):
+              print(f"Received event: {json.dumps(event)}")
+              return {'statusCode': 200, 'body': 'Invalidation placeholder - update with actual code'}
+      Environment:
+        Variables:
+          NEXTJS_URL: !Ref NextJSURL
+          REVALIDATION_SECRET: !Ref RevalidationSecret
+          CLOUDFRONT_DISTRIBUTION_ID: !Ref CloudFrontDistribution
+      Timeout: 60
+      MemorySize: 128
+
+  # CloudWatch Log Group for Invalidation Lambda
+  InvalidationLambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${InvalidationFunction}'
+      RetentionInDays: 14
+
+  # EventBridge Rule to trigger Invalidation Lambda
+  MangaEventsRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${EnvironmentName}-manga-events-rule'
+      Description: Route manga events to invalidation Lambda
+      EventBusName: !Ref MangaEventsEventBus
+      EventPattern:
+        source:
+          - manga-reader
+      State: ENABLED
+      Targets:
+        - Id: InvalidationLambdaTarget
+          Arn: !GetAtt InvalidationFunction.Arn
+
+  # Permission for EventBridge to invoke Invalidation Lambda
+  InvalidationLambdaEventBridgePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref InvalidationFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt MangaEventsRule.Arn
+
 Outputs:
   ApiEndpoint:
     Description: API Gateway endpoint URL
@@ -269,3 +435,27 @@ Outputs:
     Value: !GetAtt MangaImagesBucket.Arn
     Export:
       Name: !Sub '${EnvironmentName}-S3-Bucket-Arn'
+
+  CloudFrontDomain:
+    Description: CloudFront distribution domain name for manga images
+    Value: !GetAtt CloudFrontDistribution.DomainName
+    Export:
+      Name: !Sub '${EnvironmentName}-CloudFront-Domain'
+
+  CloudFrontDistributionId:
+    Description: CloudFront distribution ID
+    Value: !Ref CloudFrontDistribution
+    Export:
+      Name: !Sub '${EnvironmentName}-CloudFront-Distribution-Id'
+
+  EventBusName:
+    Description: EventBridge event bus name
+    Value: !Ref MangaEventsEventBus
+    Export:
+      Name: !Sub '${EnvironmentName}-EventBus-Name'
+
+  InvalidationFunctionName:
+    Description: Invalidation Lambda function name
+    Value: !Ref InvalidationFunction
+    Export:
+      Name: !Sub '${EnvironmentName}-Invalidation-Function-Name'

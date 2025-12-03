@@ -2,6 +2,8 @@ import MangaCarousel from "@/components/MangaCarousel";
 import LatestUpdates from "@/components/LatestUpdates";
 import { getPopularManga, getLatestUpdates } from "@/lib/api";
 
+export const dynamic = "force-static";
+
 export default async function Home() {
   const [popularMangaData, latestUpdatesData] = await Promise.all([
     getPopularManga(),

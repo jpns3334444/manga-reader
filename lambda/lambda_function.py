@@ -8,10 +8,11 @@ import logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-s3_client = boto3.client('s3')
+eventbridge_client = boto3.client('events')
 
 DATABASE_URL = os.environ['DATABASE_URL']
-S3_BUCKET = os.environ['S3_BUCKET']
+CLOUDFRONT_DOMAIN = os.environ['CLOUDFRONT_DOMAIN']
+EVENTBRIDGE_BUS_NAME = os.environ.get('EVENTBRIDGE_BUS_NAME', '')
 
 def get_database_connection():
     """Get database connection using DATABASE_URL environment variable."""
@@ -40,26 +41,44 @@ def create_response(status_code, body, headers=None):
         'body': json.dumps(body, default=str)
     }
 
-def generate_presigned_url(s3_key, expiration=3600):
-    """Generate presigned URL for S3 object."""
-    try:
-        url = s3_client.generate_presigned_url(
-            'get_object',
-            Params={'Bucket': S3_BUCKET, 'Key': s3_key},
-            ExpiresIn=expiration
-        )
-        return url
-    except Exception as e:
-        logger.error(f"Failed to generate presigned URL: {str(e)}")
+def get_cloudfront_url(image_key):
+    """Construct CloudFront URL for an image key."""
+    if not image_key:
         return None
+    return f"https://{CLOUDFRONT_DOMAIN}/{image_key}"
+
+
+def emit_event(event_type, detail):
+    """Emit an event to EventBridge for cache invalidation."""
+    if not EVENTBRIDGE_BUS_NAME:
+        logger.warning("EVENTBRIDGE_BUS_NAME not configured, skipping event emission")
+        return
+
+    try:
+        response = eventbridge_client.put_events(
+            Entries=[
+                {
+                    'Source': 'manga-reader',
+                    'DetailType': event_type,
+                    'Detail': json.dumps(detail),
+                    'EventBusName': EVENTBRIDGE_BUS_NAME
+                }
+            ]
+        )
+        if response.get('FailedEntryCount', 0) > 0:
+            logger.error(f"Failed to emit event: {response}")
+        else:
+            logger.info(f"Emitted event: {event_type} with detail: {detail}")
+    except Exception as e:
+        logger.error(f"Failed to emit event {event_type}: {str(e)}")
 
 def process_manga_cover(manga):
-    """Generate presigned URL for manga cover if it's an S3 key."""
+    """Generate CloudFront URL for manga cover if it's an S3 key."""
     if manga and manga.get('cover_image_url'):
         cover = manga['cover_image_url']
-        # If it looks like an S3 key (not a full URL), generate presigned URL
+        # If it looks like an S3 key (not a full URL), generate CloudFront URL
         if cover and not cover.startswith('http'):
-            manga['cover_image_url'] = generate_presigned_url(cover)
+            manga['cover_image_url'] = get_cloudfront_url(cover)
     return manga
 
 def process_manga_list_covers(manga_list):
@@ -119,6 +138,15 @@ def get_manga_by_id(connection, manga_id):
     manga = cursor.fetchone()
     cursor.close()
     return manga
+
+
+def get_manga_slug_by_id(connection, manga_id):
+    """Get manga slug by ID for event emission."""
+    cursor = connection.cursor()
+    cursor.execute("SELECT slug FROM manga WHERE id = %s", (manga_id,))
+    result = cursor.fetchone()
+    cursor.close()
+    return result[0] if result else None
 
 def get_manga_by_slug(connection, slug):
     """Get specific manga by slug with chapters."""
@@ -183,9 +211,9 @@ def get_chapter_by_manga_and_number(connection, manga_slug, chapter_number):
     """, (chapter['id'],))
     pages = cursor.fetchall()
 
-    # Generate presigned URLs for images
+    # Generate CloudFront URLs for images
     for page in pages:
-        page['image_url'] = generate_presigned_url(page['image_key'])
+        page['image_url'] = get_cloudfront_url(page['image_key'])
 
     chapter['pages'] = pages
     cursor.close()
@@ -231,9 +259,9 @@ def get_chapter_details(connection, chapter_id):
     """, (chapter_id,))
     pages = cursor.fetchall()
 
-    # Generate presigned URLs for images
+    # Generate CloudFront URLs for images
     for page in pages:
-        page['image_url'] = generate_presigned_url(page['image_key'])
+        page['image_url'] = get_cloudfront_url(page['image_key'])
 
     chapter['pages'] = pages
     cursor.close()
@@ -382,6 +410,13 @@ def lambda_handler(event, context):
                         return create_response(400, {'error': 'Missing required fields: title, slug'})
 
                     manga = create_manga(connection, body)
+
+                    # Emit event for cache invalidation
+                    emit_event('manga.created', {
+                        'manga_id': str(manga['id']),
+                        'manga_slug': manga['slug']
+                    })
+
                     return create_response(201, {'manga': manga})
 
                 elif path == '/chapters':
@@ -391,6 +426,17 @@ def lambda_handler(event, context):
                         return create_response(400, {'error': 'Missing required fields: manga_id, chapter_number, page_count'})
 
                     chapter = create_chapter(connection, body)
+
+                    # Get manga slug for event
+                    manga_slug = get_manga_slug_by_id(connection, body['manga_id'])
+
+                    # Emit event for cache invalidation
+                    emit_event('chapter.created', {
+                        'manga_id': str(body['manga_id']),
+                        'manga_slug': manga_slug,
+                        'chapter_number': float(chapter['chapter_number'])
+                    })
+
                     return create_response(201, {'chapter': chapter})
 
             # Route not found

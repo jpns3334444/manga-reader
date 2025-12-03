@@ -1,8 +1,15 @@
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getChapter } from "@/lib/api";
+import { getChapter, getAllChapterParams } from "@/lib/api";
 import ChapterNavigation from "@/components/ChapterNavigation";
+
+export const dynamic = "force-static";
+export const dynamicParams = true;
+
+export async function generateStaticParams() {
+  return getAllChapterParams();
+}
 
 interface ChapterPageProps {
   params: Promise<{ slug: string; num: string }>;
