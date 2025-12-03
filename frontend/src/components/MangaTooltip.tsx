@@ -6,9 +6,9 @@ import Image from "next/image";
 interface MangaTooltipProps {
   children: React.ReactNode;
   title: string;
-  description: string;
+  description: string | null;
   genres: string[];
-  coverImage: string;
+  coverImage: string | null;
 }
 
 export default function MangaTooltip({
@@ -100,13 +100,19 @@ export default function MangaTooltip({
         >
           <div className="flex gap-6">
             <div className="relative w-[160px] h-[240px] flex-shrink-0 overflow-hidden bg-[#2d2d2d]">
-              <Image
-                src={coverImage}
-                alt={title}
-                fill
-                className="object-cover"
-                sizes="160px"
-              />
+              {coverImage ? (
+                <Image
+                  src={coverImage}
+                  alt={title}
+                  fill
+                  className="object-cover"
+                  sizes="160px"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-[#737373] text-xs">
+                  No Cover
+                </div>
+              )}
             </div>
             <div className="flex-1 min-w-0">
               <h4 className="font-bold text-[#e5e5e5] text-lg leading-tight mb-2">
@@ -123,7 +129,7 @@ export default function MangaTooltip({
                 ))}
               </div>
               <p className="text-base text-[#a3a3a3] line-clamp-7 leading-relaxed">
-                {description}
+                {description || "No description available."}
               </p>
             </div>
           </div>

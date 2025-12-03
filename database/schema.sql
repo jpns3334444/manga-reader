@@ -11,6 +11,10 @@ CREATE TABLE manga (
     description TEXT,
     cover_image_url VARCHAR(500),
     status VARCHAR(20) DEFAULT 'ongoing' CHECK (status IN ('ongoing', 'completed', 'hiatus', 'cancelled')),
+    genres TEXT[] DEFAULT '{}',
+    author VARCHAR(255),
+    artist VARCHAR(255),
+    year INTEGER,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -59,10 +63,10 @@ CREATE TRIGGER update_manga_updated_at
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- Insert sample data (optional)
-INSERT INTO manga (title, slug, description, status) VALUES
-    ('One Piece', 'one-piece', 'The adventures of Monkey D. Luffy and his crew in search of the legendary One Piece treasure.', 'ongoing'),
-    ('Naruto', 'naruto', 'The story of Naruto Uzumaki, a young ninja who seeks recognition from his peers and dreams of becoming the Hokage.', 'completed'),
-    ('Attack on Titan', 'attack-on-titan', 'Humanity fights for survival against giant humanoid Titans.', 'completed');
+INSERT INTO manga (title, slug, description, status, genres, author, artist, year) VALUES
+    ('One Piece', 'one-piece', 'The adventures of Monkey D. Luffy and his crew in search of the legendary One Piece treasure.', 'ongoing', ARRAY['Action', 'Adventure', 'Fantasy'], 'Eiichiro Oda', 'Eiichiro Oda', 1997),
+    ('Naruto', 'naruto', 'The story of Naruto Uzumaki, a young ninja who seeks recognition from his peers and dreams of becoming the Hokage.', 'completed', ARRAY['Action', 'Adventure', 'Martial Arts'], 'Masashi Kishimoto', 'Masashi Kishimoto', 1999),
+    ('Attack on Titan', 'attack-on-titan', 'Humanity fights for survival against giant humanoid Titans.', 'completed', ARRAY['Action', 'Drama', 'Horror'], 'Hajime Isayama', 'Hajime Isayama', 2009);
 
 -- Get manga IDs for sample chapters
 DO $$

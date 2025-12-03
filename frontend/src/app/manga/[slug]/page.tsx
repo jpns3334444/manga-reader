@@ -1,7 +1,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getMangaBySlug, formatTimeAgo } from "@/lib/data";
+import { getMangaBySlug } from "@/lib/api";
+import { formatTimeAgo } from "@/lib/data";
 
 interface MangaPageProps {
   params: Promise<{ slug: string }>;
@@ -9,16 +10,38 @@ interface MangaPageProps {
 
 export default async function MangaPage({ params }: MangaPageProps) {
   const { slug } = await params;
-  const manga = getMangaBySlug(slug);
+  const mangaData = await getMangaBySlug(slug);
 
-  if (!manga) {
+  if (!mangaData) {
     notFound();
   }
+
+  // Transform API data
+  const manga = {
+    id: mangaData.id,
+    slug: mangaData.slug,
+    title: mangaData.title,
+    description: mangaData.description || "",
+    coverImage: mangaData.cover_image_url || "",
+    status: mangaData.status as "ongoing" | "completed" | "hiatus",
+    genres: mangaData.genres || [],
+    author: mangaData.author || "Unknown",
+    artist: mangaData.artist || "Unknown",
+    year: mangaData.year || 0,
+    chapters: mangaData.chapters.map((ch) => ({
+      id: ch.id,
+      number: parseFloat(ch.chapter_number),
+      title: ch.title || `Chapter ${ch.chapter_number}`,
+      pages: ch.page_count,
+      createdAt: new Date(ch.created_at),
+    })),
+  };
 
   const statusColors = {
     ongoing: "bg-green-600",
     completed: "bg-blue-600",
     hiatus: "bg-yellow-600",
+    cancelled: "bg-red-600",
   };
 
   return (
@@ -28,14 +51,20 @@ export default async function MangaPage({ params }: MangaPageProps) {
         {/* Cover */}
         <div className="flex-shrink-0 w-[200px] mx-auto md:mx-0">
           <div className="relative aspect-[2/3] overflow-hidden bg-[#2d2d2d]">
-            <Image
-              src={manga.coverImage}
-              alt={manga.title}
-              fill
-              className="object-cover"
-              sizes="200px"
-              priority
-            />
+            {manga.coverImage ? (
+              <Image
+                src={manga.coverImage}
+                alt={manga.title}
+                fill
+                className="object-cover"
+                sizes="200px"
+                priority
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-[#737373]">
+                No Cover
+              </div>
+            )}
           </div>
         </div>
 
@@ -72,7 +101,7 @@ export default async function MangaPage({ params }: MangaPageProps) {
             </div>
             <div>
               <span className="text-[#737373]">Year:</span>{" "}
-              <span className="text-[#e5e5e5]">{manga.year}</span>
+              <span className="text-[#e5e5e5]">{manga.year || "N/A"}</span>
             </div>
             <div>
               <span className="text-[#737373]">Chapters:</span>{" "}
@@ -88,27 +117,35 @@ export default async function MangaPage({ params }: MangaPageProps) {
       <section>
         <h2 className="text-xl font-bold text-[#e5e5e5] mb-4">Chapters</h2>
         <div className="bg-[#242424] overflow-hidden">
-          {[...manga.chapters].reverse().map((chapter, index) => (
-            <Link
-              key={chapter.id}
-              href={`/manga/${manga.slug}/chapter/${chapter.number}`}
-              className={`flex items-center justify-between p-4 hover:bg-[#2d2d2d] transition-colors ${
-                index !== 0 ? "border-t border-[#404040]" : ""
-              }`}
-            >
-              <div>
-                <span className="font-medium text-[#e5e5e5]">
-                  Chapter {chapter.number}
+          {manga.chapters.length === 0 ? (
+            <div className="p-4 text-[#737373] text-center">
+              No chapters available yet
+            </div>
+          ) : (
+            [...manga.chapters].reverse().map((chapter, index) => (
+              <Link
+                key={chapter.id}
+                href={`/manga/${manga.slug}/chapter/${chapter.number}`}
+                className={`flex items-center justify-between p-4 hover:bg-[#2d2d2d] transition-colors ${
+                  index !== 0 ? "border-t border-[#404040]" : ""
+                }`}
+              >
+                <div>
+                  <span className="font-medium text-[#e5e5e5]">
+                    Chapter {chapter.number}
+                  </span>
+                  {chapter.title !== `Chapter ${chapter.number}` && (
+                    <span className="text-[#a3a3a3] ml-2">
+                      - {chapter.title}
+                    </span>
+                  )}
+                </div>
+                <span className="text-sm text-[#737373]">
+                  {formatTimeAgo(chapter.createdAt)}
                 </span>
-                {chapter.title !== `Chapter ${chapter.number}` && (
-                  <span className="text-[#a3a3a3] ml-2">- {chapter.title}</span>
-                )}
-              </div>
-              <span className="text-sm text-[#737373]">
-                {formatTimeAgo(chapter.createdAt)}
-              </span>
-            </Link>
-          ))}
+              </Link>
+            ))
+          )}
         </div>
       </section>
     </main>

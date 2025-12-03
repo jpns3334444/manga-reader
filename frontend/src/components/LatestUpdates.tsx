@@ -26,13 +26,19 @@ export default function LatestUpdates({ updates }: LatestUpdatesProps) {
             className="flex gap-4 p-4 bg-[#242424] hover:bg-[#2d2d2d] transition-colors group"
           >
             <div className="relative w-20 h-28 flex-shrink-0 overflow-hidden bg-[#2d2d2d]">
-              <Image
-                src={update.coverImage}
-                alt={update.mangaTitle}
-                fill
-                className="object-cover"
-                sizes="80px"
-              />
+              {update.coverImage ? (
+                <Image
+                  src={update.coverImage}
+                  alt={update.mangaTitle}
+                  fill
+                  className="object-cover"
+                  sizes="80px"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-[#737373] text-xs">
+                  No Cover
+                </div>
+              )}
             </div>
 
             <div className="flex-1 min-w-0 flex flex-col">
@@ -43,7 +49,7 @@ export default function LatestUpdates({ updates }: LatestUpdatesProps) {
                 Chapter {update.chapterNumber} - {formatTimeAgo(update.updatedAt)}
               </p>
               <p className="text-xs text-[#737373] line-clamp-3 leading-relaxed">
-                {truncateWords(update.description, 50)}
+                {truncateWords(update.description || "", 50)}
               </p>
             </div>
           </Link>

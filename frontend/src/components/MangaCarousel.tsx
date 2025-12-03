@@ -101,13 +101,19 @@ export default function MangaCarousel({ title, manga }: MangaCarouselProps) {
               className="flex-shrink-0 w-[160px] group"
             >
               <div className="relative aspect-[2/3] bg-[#2d2d2d] overflow-hidden border-2 border-transparent hover:border-[#ff6740]">
-                <Image
-                  src={m.coverImage}
-                  alt={m.title}
-                  fill
-                  className="object-cover group-hover:brightness-110"
-                  sizes="160px"
-                />
+                {m.coverImage ? (
+                  <Image
+                    src={m.coverImage}
+                    alt={m.title}
+                    fill
+                    className="object-cover group-hover:brightness-110"
+                    sizes="160px"
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-[#737373] text-xs">
+                    No Cover
+                  </div>
+                )}
                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full pointer-events-none" />
               </div>
               <h3 className="mt-2 text-sm font-medium text-[#e5e5e5] line-clamp-2 group-hover:text-[#ff6740] transition-colors">

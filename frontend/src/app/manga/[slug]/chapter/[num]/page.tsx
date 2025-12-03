@@ -1,66 +1,35 @@
-"use client";
-
-import { useEffect, useCallback } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
-import { getMangaBySlug, getChapterPages } from "@/lib/data";
+import { notFound } from "next/navigation";
+import { getChapter } from "@/lib/api";
+import ChapterNavigation from "@/components/ChapterNavigation";
 
-export default function ChapterReaderPage() {
-  const params = useParams();
-  const router = useRouter();
-  const slug = params.slug as string;
-  const chapterNum = parseInt(params.num as string, 10);
+interface ChapterPageProps {
+  params: Promise<{ slug: string; num: string }>;
+}
 
-  const manga = getMangaBySlug(slug);
-  const pages = getChapterPages(slug, chapterNum);
+export default async function ChapterReaderPage({ params }: ChapterPageProps) {
+  const { slug, num } = await params;
+  const chapterNum = parseFloat(num);
 
-  const chapter = manga?.chapters.find((c) => c.number === chapterNum);
-  const prevChapter = manga?.chapters.find((c) => c.number === chapterNum - 1);
-  const nextChapter = manga?.chapters.find((c) => c.number === chapterNum + 1);
+  const chapter = await getChapter(slug, chapterNum);
 
-  const goToPrev = useCallback(() => {
-    if (prevChapter) {
-      router.push(`/manga/${slug}/chapter/${prevChapter.number}`);
-    }
-  }, [prevChapter, router, slug]);
-
-  const goToNext = useCallback(() => {
-    if (nextChapter) {
-      router.push(`/manga/${slug}/chapter/${nextChapter.number}`);
-    }
-  }, [nextChapter, router, slug]);
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "ArrowLeft") {
-        goToPrev();
-      } else if (e.key === "ArrowRight") {
-        goToNext();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [goToPrev, goToNext]);
-
-  if (!manga || !chapter) {
-    return (
-      <main className="max-w-7xl mx-auto px-4 py-6">
-        <div className="text-center py-12">
-          <h1 className="text-2xl font-bold text-[#e5e5e5]">
-            Chapter not found
-          </h1>
-          <Link href="/" className="text-[#ff6740] hover:underline mt-4 block">
-            Return to home
-          </Link>
-        </div>
-      </main>
-    );
+  if (!chapter) {
+    notFound();
   }
+
+  const prevChapter = chapter.prev_chapter;
+  const nextChapter = chapter.next_chapter;
 
   return (
     <main className="min-h-screen bg-[#0d0d0d]">
+      {/* Keyboard navigation handler */}
+      <ChapterNavigation
+        mangaSlug={slug}
+        prevChapter={prevChapter}
+        nextChapter={nextChapter}
+      />
+
       {/* Top navigation */}
       <div className="sticky top-14 z-40 bg-[#1a1a1a] border-b border-[#404040]">
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
@@ -81,7 +50,7 @@ export default function ChapterReaderPage() {
                 d="M15 19l-7-7 7-7"
               />
             </svg>
-            <span className="hidden sm:inline">{manga.title}</span>
+            <span className="hidden sm:inline">{chapter.manga_title}</span>
           </Link>
 
           <span className="text-[#e5e5e5] font-medium">
@@ -89,72 +58,112 @@ export default function ChapterReaderPage() {
           </span>
 
           <div className="flex items-center gap-2">
-            <button
-              onClick={goToPrev}
-              disabled={!prevChapter}
-              className="p-2 bg-[#2d2d2d] hover:bg-[#363636] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              aria-label="Previous chapter"
-            >
-              <svg
-                className="w-5 h-5 text-[#e5e5e5]"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
+            {prevChapter !== null ? (
+              <Link
+                href={`/manga/${slug}/chapter/${prevChapter}`}
+                className="p-2 bg-[#2d2d2d] hover:bg-[#363636] transition-colors"
+                aria-label="Previous chapter"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M15 19l-7-7 7-7"
-                />
-              </svg>
-            </button>
-            <button
-              onClick={goToNext}
-              disabled={!nextChapter}
-              className="p-2 bg-[#2d2d2d] hover:bg-[#363636] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              aria-label="Next chapter"
-            >
-              <svg
-                className="w-5 h-5 text-[#e5e5e5]"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
+                <svg
+                  className="w-5 h-5 text-[#e5e5e5]"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 19l-7-7 7-7"
+                  />
+                </svg>
+              </Link>
+            ) : (
+              <div className="p-2 bg-[#2d2d2d] opacity-30 cursor-not-allowed">
+                <svg
+                  className="w-5 h-5 text-[#e5e5e5]"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 19l-7-7 7-7"
+                  />
+                </svg>
+              </div>
+            )}
+            {nextChapter !== null ? (
+              <Link
+                href={`/manga/${slug}/chapter/${nextChapter}`}
+                className="p-2 bg-[#2d2d2d] hover:bg-[#363636] transition-colors"
+                aria-label="Next chapter"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M9 5l7 7-7 7"
-                />
-              </svg>
-            </button>
+                <svg
+                  className="w-5 h-5 text-[#e5e5e5]"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 5l7 7-7 7"
+                  />
+                </svg>
+              </Link>
+            ) : (
+              <div className="p-2 bg-[#2d2d2d] opacity-30 cursor-not-allowed">
+                <svg
+                  className="w-5 h-5 text-[#e5e5e5]"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 5l7 7-7 7"
+                  />
+                </svg>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
       {/* Pages */}
       <div className="max-w-4xl mx-auto py-4">
-        {pages.map((pageUrl, index) => (
-          <div key={index} className="mb-1">
-            <Image
-              src={pageUrl}
-              alt={`Page ${index + 1}`}
-              width={800}
-              height={1200}
-              className="w-full h-auto"
-              priority={index < 3}
-            />
+        {chapter.pages.length === 0 ? (
+          <div className="text-center py-12 text-[#737373]">
+            No pages available for this chapter
           </div>
-        ))}
+        ) : (
+          chapter.pages.map((page, index) => (
+            <div key={page.id} className="mb-1">
+              <Image
+                src={page.image_url}
+                alt={`Page ${page.page_number}`}
+                width={800}
+                height={1200}
+                className="w-full h-auto"
+                priority={index < 3}
+              />
+            </div>
+          ))
+        )}
       </div>
 
       {/* Bottom navigation */}
       <div className="bg-[#1a1a1a] border-t border-[#404040]">
         <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
-          {prevChapter ? (
+          {prevChapter !== null ? (
             <Link
-              href={`/manga/${slug}/chapter/${prevChapter.number}`}
+              href={`/manga/${slug}/chapter/${prevChapter}`}
               className="flex items-center gap-2 px-4 py-2 bg-[#2d2d2d] hover:bg-[#363636] text-[#e5e5e5] transition-colors"
             >
               <svg
@@ -180,12 +189,12 @@ export default function ChapterReaderPage() {
             href={`/manga/${slug}`}
             className="text-[#a3a3a3] hover:text-[#e5e5e5] transition-colors"
           >
-            Back to {manga.title}
+            Back to {chapter.manga_title}
           </Link>
 
-          {nextChapter ? (
+          {nextChapter !== null ? (
             <Link
-              href={`/manga/${slug}/chapter/${nextChapter.number}`}
+              href={`/manga/${slug}/chapter/${nextChapter}`}
               className="flex items-center gap-2 px-4 py-2 bg-[#2d2d2d] hover:bg-[#363636] text-[#e5e5e5] transition-colors"
             >
               Next

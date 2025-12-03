@@ -150,6 +150,27 @@ Resources:
       RouteKey: 'GET /manga/{id}'
       Target: !Sub 'integrations/${LambdaIntegration}'
 
+  GetLatestMangaRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref MangaApiGateway
+      RouteKey: 'GET /manga/latest'
+      Target: !Sub 'integrations/${LambdaIntegration}'
+
+  GetMangaBySlugRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref MangaApiGateway
+      RouteKey: 'GET /manga/slug/{slug}'
+      Target: !Sub 'integrations/${LambdaIntegration}'
+
+  GetChapterBySlugRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref MangaApiGateway
+      RouteKey: 'GET /manga/slug/{slug}/chapter/{num}'
+      Target: !Sub 'integrations/${LambdaIntegration}'
+
   GetMangaChaptersRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties:
@@ -196,7 +217,7 @@ Resources:
       FunctionName: !Ref MangaApiFunction
       Action: lambda:InvokeFunction
       Principal: apigateway.amazonaws.com
-      SourceArn: !Sub '${MangaApiGateway}/*/*'
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${MangaApiGateway}/*/*'
 
   # CloudWatch Log Group for Lambda
   LambdaLogGroup:

@@ -53,15 +53,41 @@ def generate_presigned_url(s3_key, expiration=3600):
         logger.error(f"Failed to generate presigned URL: {str(e)}")
         return None
 
-def get_manga_list(connection):
+def get_manga_list(connection, popular=False):
     """Get list of all manga series."""
     cursor = connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cursor.execute("""
+    limit = "LIMIT 8" if popular else ""
+    cursor.execute(f"""
         SELECT id, title, slug, description, cover_image_url, status,
-               created_at, updated_at
+               genres, author, artist, year, created_at, updated_at
         FROM manga
         ORDER BY title
+        {limit}
     """)
+    manga_list = cursor.fetchall()
+    cursor.close()
+    return manga_list
+
+def get_latest_manga(connection, limit=20):
+    """Get manga sorted by most recent chapter creation date."""
+    cursor = connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute("""
+        SELECT m.id, m.title, m.slug, m.description, m.cover_image_url, m.status,
+               m.genres, m.author, m.artist, m.year, m.created_at, m.updated_at,
+               c.chapter_number as latest_chapter_number,
+               c.title as latest_chapter_title,
+               c.created_at as latest_chapter_date
+        FROM manga m
+        LEFT JOIN LATERAL (
+            SELECT chapter_number, title, created_at
+            FROM chapters
+            WHERE manga_id = m.id
+            ORDER BY created_at DESC
+            LIMIT 1
+        ) c ON true
+        ORDER BY COALESCE(c.created_at, m.created_at) DESC
+        LIMIT %s
+    """, (limit,))
     manga_list = cursor.fetchall()
     cursor.close()
     return manga_list
@@ -71,13 +97,84 @@ def get_manga_by_id(connection, manga_id):
     cursor = connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cursor.execute("""
         SELECT id, title, slug, description, cover_image_url, status,
-               created_at, updated_at
+               genres, author, artist, year, created_at, updated_at
         FROM manga
         WHERE id = %s
     """, (manga_id,))
     manga = cursor.fetchone()
     cursor.close()
     return manga
+
+def get_manga_by_slug(connection, slug):
+    """Get specific manga by slug with chapters."""
+    cursor = connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute("""
+        SELECT id, title, slug, description, cover_image_url, status,
+               genres, author, artist, year, created_at, updated_at
+        FROM manga
+        WHERE slug = %s
+    """, (slug,))
+    manga = cursor.fetchone()
+    if manga:
+        cursor.execute("""
+            SELECT id, manga_id, chapter_number, title, page_count, created_at
+            FROM chapters
+            WHERE manga_id = %s
+            ORDER BY chapter_number
+        """, (manga['id'],))
+        manga['chapters'] = cursor.fetchall()
+    cursor.close()
+    return manga
+
+def get_chapter_by_manga_and_number(connection, manga_slug, chapter_number):
+    """Get chapter by manga slug and chapter number with pages and prev/next info."""
+    cursor = connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute("""
+        SELECT c.id, c.manga_id, c.chapter_number, c.title, c.page_count, c.created_at,
+               m.title as manga_title, m.slug as manga_slug
+        FROM chapters c
+        JOIN manga m ON c.manga_id = m.id
+        WHERE m.slug = %s AND c.chapter_number = %s
+    """, (manga_slug, chapter_number))
+    chapter = cursor.fetchone()
+
+    if not chapter:
+        cursor.close()
+        return None
+
+    # Get prev/next chapter numbers
+    cursor.execute("""
+        SELECT chapter_number FROM chapters
+        WHERE manga_id = %s AND chapter_number < %s
+        ORDER BY chapter_number DESC LIMIT 1
+    """, (chapter['manga_id'], chapter_number))
+    prev_row = cursor.fetchone()
+    chapter['prev_chapter'] = float(prev_row['chapter_number']) if prev_row else None
+
+    cursor.execute("""
+        SELECT chapter_number FROM chapters
+        WHERE manga_id = %s AND chapter_number > %s
+        ORDER BY chapter_number ASC LIMIT 1
+    """, (chapter['manga_id'], chapter_number))
+    next_row = cursor.fetchone()
+    chapter['next_chapter'] = float(next_row['chapter_number']) if next_row else None
+
+    # Get chapter pages
+    cursor.execute("""
+        SELECT id, page_number, image_key
+        FROM chapter_pages
+        WHERE chapter_id = %s
+        ORDER BY page_number
+    """, (chapter['id'],))
+    pages = cursor.fetchall()
+
+    # Generate presigned URLs for images
+    for page in pages:
+        page['image_url'] = generate_presigned_url(page['image_key'])
+
+    chapter['pages'] = pages
+    cursor.close()
+    return chapter
 
 def get_manga_chapters(connection, manga_id):
     """Get chapters for a specific manga."""
@@ -172,19 +269,53 @@ def lambda_handler(event, context):
         logger.info(f"Event: {json.dumps(event)}")
 
         http_method = event.get('requestContext', {}).get('http', {}).get('method')
-        path = event.get('requestContext', {}).get('http', {}).get('path', '')
+        raw_path = event.get('requestContext', {}).get('http', {}).get('path', '')
+        # Strip stage prefix from path (e.g., /manga-reader/manga -> /manga)
+        stage = event.get('requestContext', {}).get('stage', '')
+        path = raw_path[len(f'/{stage}'):] if stage and raw_path.startswith(f'/{stage}') else raw_path
         path_parameters = event.get('pathParameters') or {}
 
         # Get database connection
         connection = get_database_connection()
 
         try:
+            # Get query parameters
+            query_params = event.get('queryStringParameters') or {}
+
             # Route handling
             if http_method == 'GET':
                 if path == '/manga':
-                    # GET /manga - List all manga
-                    manga_list = get_manga_list(connection)
+                    # GET /manga - List all manga (with optional ?popular=true)
+                    popular = query_params.get('popular', '').lower() == 'true'
+                    manga_list = get_manga_list(connection, popular=popular)
                     return create_response(200, {'manga': manga_list})
+
+                elif path == '/manga/latest':
+                    # GET /manga/latest - Get manga sorted by most recent chapter
+                    manga_list = get_latest_manga(connection)
+                    return create_response(200, {'manga': manga_list})
+
+                elif path.startswith('/manga/slug/'):
+                    # Slug-based routes
+                    if '/chapter/' in path:
+                        # GET /manga/slug/{slug}/chapter/{num} - Get chapter by slug and number
+                        slug = path_parameters.get('slug')
+                        chapter_num = path_parameters.get('num')
+                        if not slug or not chapter_num:
+                            return create_response(400, {'error': 'Missing slug or chapter number'})
+                        chapter = get_chapter_by_manga_and_number(connection, slug, float(chapter_num))
+                        if not chapter:
+                            return create_response(404, {'error': 'Chapter not found'})
+                        return create_response(200, {'chapter': chapter})
+                    else:
+                        # GET /manga/slug/{slug} - Get manga by slug
+                        slug = path_parameters.get('slug')
+                        if not slug:
+                            return create_response(400, {'error': 'Missing slug'})
+                        manga = get_manga_by_slug(connection, slug)
+                        if not manga:
+                            return create_response(404, {'error': 'Manga not found'})
+                        return create_response(200, {'manga': manga})
 
                 elif path.startswith('/manga/') and path.endswith('/chapters'):
                     # GET /manga/{id}/chapters - List chapters for manga

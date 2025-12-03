@@ -4,8 +4,15 @@
 
 set -e
 
+# Load environment variables from .env file
+if [ -f .env ]; then
+    set -a
+    source .env
+    set +a
+fi
+
 ENVIRONMENT_NAME="manga-reader"
-DATABASE_URL=""
+DATABASE_URL="${DATABASE_URL:-""}"
 
 # Colors
 RED='\033[0;31m'
